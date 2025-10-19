@@ -339,11 +339,9 @@ See [BUILD.md](BUILD.md) for detailed build instructions.
 
 ## 📚 Documentation
 
-- **[Quick Start Guide](QUICK_START.md)** - Complete setup walkthrough
 - **[Certificate Installation](CERTIFICATE_INSTALLATION.md)** - Detailed cert setup for all platforms
 - **[WireMock Workflow](WIREMOCK_WORKFLOW.md)** - End-to-end WireMock integration
 - **[Platform Comparison](PLATFORM_COMPARISON.md)** - Platform-specific differences
-- **[Build Instructions](BUILD.md)** - How to build from source
 
 ## 🔐 Security & Privacy
 
