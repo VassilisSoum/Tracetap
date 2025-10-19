@@ -12,6 +12,30 @@ from pathlib import Path
 import os
 
 
+# ---------- printing helpers (avoid Unicode on non-UTF consoles) ----------
+def _supports_unicode_stdout() -> bool:
+    enc = sys.stdout.encoding or ""
+    return "utf" in enc.lower()
+
+
+_USE_UNICODE = _supports_unicode_stdout()
+
+OK = "✓" if _USE_UNICODE else "OK"
+FAIL = "✗" if _USE_UNICODE else "X"
+
+def info(msg: str) -> None:
+    print(msg)
+
+def ok(msg: str) -> None:
+    print(f"{OK} {msg}")
+
+def err(msg: str) -> None:
+    print(f"{FAIL} {msg}")
+
+
+# -------------------------------------------------------------------------
+
+
 def get_platform_info():
     """Get platform-specific information"""
     system = platform.system().lower()
@@ -42,35 +66,32 @@ def build_executable():
     """Build the executable using PyInstaller"""
     platform_name, arch, ext = get_platform_info()
 
-    print(f"Building TraceTap for {platform_name}-{arch}...")
-    print(f"Python: {sys.version}")
-    print(f"Platform: {platform.platform()}")
+    info(f"Building TraceTap for {platform_name}-{arch}...")
+    info(f"Python: {sys.version}")
+    info(f"Platform: {platform.platform()}")
     print()
 
     # PyInstaller command
     cmd = [
         'pyinstaller',
-        '--onefile',  # Single executable
-        '--name', 'tracetap',  # Output name
-        '--clean',  # Clean cache
-        '--noconfirm',  # Overwrite without asking
-        '--console',  # Console application
-        '--strip',  # Strip symbols (smaller size)
+        '--onefile',          # Single executable
+        '--name', 'tracetap', # Output name
+        '--clean',            # Clean cache
+        '--noconfirm',        # Overwrite without asking
+        '--console',          # Console application
+        '--strip',            # Strip symbols (smaller size; no-op on Windows)
         'tracetap.py'
     ]
 
-    # Add platform-specific options
-    if platform_name == 'windows':
-        cmd.extend([
-            '--icon', 'NONE',  # No icon for now
-        ])
+    # On Windows, do NOT pass --icon NONE (PyInstaller expects a real path)
+    # If you add an icon later, use: ['--icon', 'path\\to\\icon.ico']
 
-    print(f"Running: {' '.join(cmd)}")
+    info(f"Running: {' '.join(cmd)}")
     print()
 
     try:
         subprocess.run(cmd, check=True)
-        print("\n✓ Build successful!")
+        ok("Build successful!")
 
         # Create release directory
         release_dir = Path('release')
@@ -85,8 +106,8 @@ def build_executable():
 
         if src.exists():
             shutil.copy2(src, dst)
-            print(f"\n✓ Executable created: {dst}")
-            print(f"  Size: {dst.stat().st_size / 1024 / 1024:.1f} MB")
+            ok(f"Executable created: {dst}")
+            info(f"  Size: {dst.stat().st_size / 1024 / 1024:.1f} MB")
 
             # Make executable on Unix systems
             if platform_name != 'windows':
@@ -94,20 +115,20 @@ def build_executable():
 
             return True
         else:
-            print(f"\n✗ Error: Expected executable not found at {src}")
+            err(f"Error: Expected executable not found at {src}")
             return False
 
     except subprocess.CalledProcessError as e:
-        print(f"\n✗ Build failed: {e}")
+        err(f"Build failed: {e}")
         return False
     except Exception as e:
-        print(f"\n✗ Unexpected error: {e}")
+        err(f"Unexpected error: {e}")
         return False
 
 
 def clean_build_files():
     """Clean up build artifacts"""
-    print("\nCleaning up build artifacts...")
+    info("Cleaning up build artifacts...")
 
     dirs_to_remove = ['build', 'dist', '__pycache__']
     files_to_remove = ['tracetap.spec']
@@ -116,18 +137,18 @@ def clean_build_files():
         path = Path(dir_name)
         if path.exists():
             shutil.rmtree(path)
-            print(f"  Removed: {dir_name}/")
+            info(f"  Removed: {dir_name}/")
 
     for file_name in files_to_remove:
         path = Path(file_name)
         if path.exists():
             path.unlink()
-            print(f"  Removed: {file_name}")
+            info(f"  Removed: {file_name}")
 
 
 if __name__ == '__main__':
     print("=" * 60)
-    print("TraceTap Executable Builder")
+    info("TraceTap Executable Builder")
     print("=" * 60)
     print()
 
@@ -141,9 +162,9 @@ if __name__ == '__main__':
         if auto_clean:
             clean_build_files()
         elif non_interactive:
-            print("\nNon-interactive mode detected; skipping cleanup of build artifacts.")
+            info("Non-interactive mode detected; skipping cleanup of build artifacts.")
         else:
-            print("\nBuild artifacts (build/, dist/) can be cleaned up.")
+            info("Build artifacts (build/, dist/) can be cleaned up.")
             try:
                 response = input("Clean up build artifacts? (y/n): ").lower().strip()
             except EOFError:
@@ -151,11 +172,12 @@ if __name__ == '__main__':
             if response == 'y':
                 clean_build_files()
 
-    print("\n" + "=" * 60)
+    print()
+    print("=" * 60)
     if success:
-        print("✓ Build complete! Check the release/ directory")
+        ok("Build complete! Check the release/ directory")
     else:
-        print("✗ Build failed. Check the error messages above.")
+        err("Build failed. Check the error messages above.")
     print("=" * 60)
 
     sys.exit(0 if success else 1)
