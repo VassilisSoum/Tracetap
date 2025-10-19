@@ -11,8 +11,6 @@ import shutil
 from pathlib import Path
 import os
 
-
-# ---------- printing helpers (avoid Unicode on non-UTF consoles) ----------
 def _supports_unicode_stdout() -> bool:
     enc = sys.stdout.encoding or ""
     return "utf" in enc.lower()
@@ -31,9 +29,6 @@ def ok(msg: str) -> None:
 
 def err(msg: str) -> None:
     print(f"{FAIL} {msg}")
-
-
-# -------------------------------------------------------------------------
 
 
 def get_platform_info():
@@ -82,9 +77,6 @@ def build_executable():
         '--strip',            # Strip symbols (smaller size; no-op on Windows)
         'tracetap.py'
     ]
-
-    # On Windows, do NOT pass --icon NONE (PyInstaller expects a real path)
-    # If you add an icon later, use: ['--icon', 'path\\to\\icon.ico']
 
     info(f"Running: {' '.join(cmd)}")
     print()
