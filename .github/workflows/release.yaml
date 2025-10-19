@@ -13,7 +13,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-22.04           # FIX: was ubuntu-20.04
+          - os: ubuntu-22.04
             platform: linux
             arch: x64
             artifact_name: tracetap-linux-x64
@@ -79,7 +79,6 @@ jobs:
           path: release/${{ matrix.artifact_name }}
           retention-days: 5
 
-      # FIX: include arch to avoid duplicate artifact names across macOS rows
       - name: Upload cert script artifact
         uses: actions/upload-artifact@v4
         with:
@@ -123,7 +122,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # FIX: use pattern + merge-multiple to pull everything cleanly into one folder
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
