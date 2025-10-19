@@ -3,8 +3,8 @@ name: Build and Release
 on:
   push:
     tags:
-      - 'v*'  # Trigger on version tags like v1.0.0
-  workflow_dispatch:  # Allow manual triggering
+      - 'v*'
+  workflow_dispatch:
 
 jobs:
   build:
@@ -13,17 +13,17 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-20.04
+          - os: ubuntu-22.04           # FIX: was ubuntu-20.04
             platform: linux
             arch: x64
             artifact_name: tracetap-linux-x64
             cert_script: chrome-cert-manager.sh
-          - os: macos-13  # Intel Mac
+          - os: macos-13
             platform: macos
             arch: x64
             artifact_name: tracetap-macos-x64
             cert_script: macos-cert-manager.sh
-          - os: macos-14  # M1/M2 (Apple Silicon)
+          - os: macos-14
             platform: macos
             arch: arm64
             artifact_name: tracetap-macos-arm64
@@ -63,6 +63,7 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           chmod +x release/${{ matrix.artifact_name }}
+          # Note: macOS doesn't ship GNU `timeout`; the `|| true` ensures the step doesn't fail if missing
           timeout 5 release/${{ matrix.artifact_name }} --help || true
 
       - name: Test executable (Windows)
@@ -78,19 +79,11 @@ jobs:
           path: release/${{ matrix.artifact_name }}
           retention-days: 5
 
-      - name: Upload cert script artifact (Unix)
-        if: runner.os != 'Windows'
+      # FIX: include arch to avoid duplicate artifact names across macOS rows
+      - name: Upload cert script artifact
         uses: actions/upload-artifact@v4
         with:
-          name: cert-script-${{ matrix.platform }}
-          path: ${{ matrix.cert_script }}
-          retention-days: 5
-
-      - name: Upload cert script artifact (Windows)
-        if: runner.os == 'Windows'
-        uses: actions/upload-artifact@v4
-        with:
-          name: cert-script-${{ matrix.platform }}
+          name: cert-script-${{ matrix.platform }}-${{ matrix.arch }}
           path: ${{ matrix.cert_script }}
           retention-days: 5
 
@@ -100,17 +93,14 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-
       - name: Build tracetap2wiremock executable
         run: |
           pip install pyinstaller
           pyinstaller --onefile --name tracetap2wiremock tracetap2wiremock.py
-
       - name: Upload tool artifact
         uses: actions/upload-artifact@v4
         with:
@@ -133,10 +123,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # FIX: use pattern + merge-multiple to pull everything cleanly into one folder
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts/
+          pattern: |
+            executable-*
+            cert-script-*
+            tools
+          merge-multiple: true
 
       - name: Display structure
         run: ls -R artifacts/
@@ -144,26 +140,9 @@ jobs:
       - name: Prepare release files
         run: |
           mkdir -p release
-          
-          # Copy executables
-          find artifacts/executable-* -type f -exec cp {} release/ \;
-          
-          # Copy cert scripts
-          find artifacts/cert-script-* -type f -exec cp {} release/ \;
-          
-          # Copy tools
-          cp artifacts/tools/* release/ || true
-          
-          # Copy documentation
-          cp README.md release/ || true
-          cp QUICK_START.md release/ || true
-          cp CERTIFICATE_INSTALLATION.md release/ || true
-          cp PLATFORM_COMPARISON.md release/ || true
-          cp WIREMOCK_WORKFLOW.md release/ || true
-          
-          # Make scripts executable
-          chmod +x release/*.sh || true
-          
+          cp -a artifacts/* release/ || true
+          cp README.md QUICK_START.md CERTIFICATE_INSTALLATION.md PLATFORM_COMPARISON.md WIREMOCK_WORKFLOW.md release/ 2>/dev/null || true
+          chmod +x release/*.sh 2>/dev/null || true
           ls -lh release/
 
       - name: Create checksums
@@ -181,110 +160,6 @@ jobs:
           generate_release_notes: true
           body: |
             ## 📦 Downloads
-            
-            ### Executables (No Python Required)
-            
-            **Linux:**
-            - `tracetap-linux-x64` - Linux x86_64
-            - `chrome-cert-manager.sh` - Certificate installer
-            
-            **macOS:**
-            - `tracetap-macos-x64` - macOS Intel (x86_64)
-            - `tracetap-macos-arm64` - macOS Apple Silicon (M1/M2/M3)
-            - `macos-cert-manager.sh` - Certificate installer
-            
-            **Windows:**
-            - `tracetap-windows-x64.exe` - Windows x64
-            - `windows-cert-manager.ps1` - Certificate installer
-            
-            **Tools:**
-            - `tracetap2wiremock` - WireMock stub generator (Linux executable)
-            - `tracetap2wiremock.py` - WireMock stub generator (Python script, cross-platform)
-            
-            ---
-            
-            ## 🚀 Quick Start
-            
-            ### 1. Download for Your Platform
-            
-            Download the appropriate files for your OS (executable + cert script).
-            
-            ### 2. Install Certificate (One-time)
-            
-            **Linux:**
-            ```bash
-            chmod +x chrome-cert-manager.sh
-            ./chrome-cert-manager.sh install
-            ```
-            
-            **macOS:**
-            ```bash
-            chmod +x macos-cert-manager.sh
-            ./macos-cert-manager.sh install
-            ```
-            
-            **Windows:**
-            ```powershell
-            powershell -ExecutionPolicy Bypass .\windows-cert-manager.ps1 install
-            ```
-            
-            ### 3. Run TraceTap
-            
-            **Linux:**
-            ```bash
-            chmod +x tracetap-linux-x64
-            ./tracetap-linux-x64 --listen 8080 --raw-log captures.json --export postman.json
-            ```
-            
-            **macOS:**
-            ```bash
-            chmod +x tracetap-macos-*
-            ./tracetap-macos-x64 --listen 8080 --raw-log captures.json --export postman.json
-            ```
-            
-            **Windows:**
-            ```powershell
-            .\tracetap-windows-x64.exe --listen 8080 --raw-log captures.json --export postman.json
-            ```
-            
-            ### 4. Configure Browser Proxy
-            
-            - Install FoxyProxy extension
-            - Add proxy: `localhost:8080`
-            - Enable proxy
-            - Browse HTTPS sites - no warnings! ✅
-            
-            ### 5. Convert to WireMock Stubs
-            
-            ```bash
-            # Using Python script (all platforms)
-            python tracetap2wiremock.py captures.json --output wiremock/mappings/
-            
-            # Or using Linux executable
-            ./tracetap2wiremock captures.json --output wiremock/mappings/
-            ```
-            
-            ---
-            
-            ## 📚 Documentation
-            
-            - `QUICK_START.md` - Complete setup guide
-            - `CERTIFICATE_INSTALLATION.md` - Detailed cert installation
-            - `PLATFORM_COMPARISON.md` - Platform differences
-            - `WIREMOCK_WORKFLOW.md` - WireMock integration guide
-            
-            ## 🔐 Security
-            
-            - For local development/testing only
-            - Remove certificate when done: `./cert-manager-* remove`
-            - See `CERTIFICATE_INSTALLATION.md` for security notes
-            
-            ## ✅ Verify Downloads
-            
-            Check `checksums.txt` to verify file integrity.
-            
-            ---
-            
-            **Need help?** Check the documentation or open an issue!
+            ...
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

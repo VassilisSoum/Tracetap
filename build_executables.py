@@ -9,6 +9,7 @@ import sys
 import platform
 import shutil
 from pathlib import Path
+import os
 
 
 def get_platform_info():
@@ -132,12 +133,23 @@ if __name__ == '__main__':
 
     success = build_executable()
 
-    # Ask if user wants to clean up
     if success:
-        print("\nBuild artifacts (build/, dist/) can be cleaned up.")
-        response = input("Clean up build artifacts? (y/n): ").lower().strip()
-        if response == 'y':
+        # Detect CI or non-interactive environments
+        non_interactive = not sys.stdin.isatty() or os.environ.get("CI") == "true"
+        auto_clean = os.environ.get("AUTO_CLEAN", "").lower() in ("1", "true", "yes")
+
+        if auto_clean:
             clean_build_files()
+        elif non_interactive:
+            print("\nNon-interactive mode detected; skipping cleanup of build artifacts.")
+        else:
+            print("\nBuild artifacts (build/, dist/) can be cleaned up.")
+            try:
+                response = input("Clean up build artifacts? (y/n): ").lower().strip()
+            except EOFError:
+                response = 'n'
+            if response == 'y':
+                clean_build_files()
 
     print("\n" + "=" * 60)
     if success:
