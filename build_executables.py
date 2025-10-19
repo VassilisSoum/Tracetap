@@ -177,6 +177,11 @@ def build_all_executables() -> bool:
     """
     Build all TraceTap executables.
 
+    Note: We only build TraceTap (the proxy) as an executable because it has
+    complex dependencies (mitmproxy). The tracetap2wiremock tool is distributed
+    as a Python script since it has zero dependencies and works across all
+    platforms without GLIBC compatibility issues.
+
     Returns:
         True if all builds succeeded, False if any failed
     """
@@ -190,9 +195,11 @@ def build_all_executables() -> bool:
     print()
 
     # List of executables to build
+    # Note: tracetap2wiremock is NOT built as an executable to avoid GLIBC
+    # compatibility issues on Linux. It's distributed as a Python script instead.
     builds = [
         ('tracetap.py', 'tracetap'),
-        ('tracetap2wiremock.py', 'tracetap2wiremock'),
+        # ('tracetap2wiremock.py', 'tracetap2wiremock'),  # Ship as .py script
     ]
 
     results = []
@@ -225,6 +232,9 @@ def build_all_executables() -> bool:
     if all_success:
         ok(f"All builds completed successfully!")
         info(f"Output directory: {Path('release').absolute()}")
+        print()
+        info("Note: tracetap2wiremock is distributed as a Python script (tracetap2wiremock.py)")
+        info("      No dependencies needed - works on all platforms!")
     else:
         err(f"Some builds failed. Check error messages above.")
 
