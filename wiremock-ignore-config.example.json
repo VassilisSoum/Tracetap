@@ -1,0 +1,81 @@
+{
+  "_comment": "TraceTap to WireMock - Ignore Configuration",
+  "_description": "Specify fields to exclude from strict equalTo matching in WireMock stubs",
+
+  "ignore_headers": [
+    "Date",
+    "X-Request-Id",
+    "X-Correlation-Id",
+    "X-Trace-Id",
+    "Authorization",
+    "Cookie",
+    "Set-Cookie",
+    "User-Agent",
+    "X-Forwarded-For",
+    "X-Real-IP"
+  ],
+
+  "ignore_query_params": [
+    "timestamp",
+    "nonce",
+    "_",
+    "cache_buster",
+    "t"
+  ],
+
+  "ignore_path_segments": [
+    {
+      "_comment": "Ignore path segments by position (0-indexed)",
+      "position": 3,
+      "_example": "/api/v1/users/{id}/profile would ignore position 3"
+    },
+    {
+      "_comment": "Ignore path segments containing keywords",
+      "contains": "session",
+      "_example": "Matches any segment containing 'session'"
+    }
+  ],
+
+  "auto_detect_path_params": true,
+  "_auto_detect_comment": "Automatically detect and replace dynamic path segments (UUIDs, long random strings, numeric IDs)",
+
+  "ignore_json_fields": [
+    "timestamp",
+    "createdAt",
+    "updatedAt",
+    "id",
+    "uuid",
+    "requestId",
+    "correlationId",
+    "traceId",
+    "sessionId",
+    "nonce",
+    "token",
+    "accessToken",
+    "refreshToken"
+  ],
+
+  "ignore_response_json_fields": [
+    "timestamp",
+    "serverTime",
+    "processingTime"
+  ],
+
+  "match_headers": false,
+  "ignore_request_body": false,
+  "ignore_delays": false,
+
+  "_examples": {
+    "_comment": "Usage examples",
+    "basic": "python tracetap2wiremock.py capture.json -o stubs/ --config ignore-config.json",
+    "ignore_patterns": {
+      "_comment": "You can also use patterns to match field paths",
+      "ignore_patterns": [
+        ".timestamp",
+        ".id",
+        "_id",
+        "Token"
+      ]
+    }
+  }
+}

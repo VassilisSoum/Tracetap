@@ -1,0 +1,2 @@
+mitmproxy>=10.0.0,<11.0.0
+pyinstaller>=5.0.0
