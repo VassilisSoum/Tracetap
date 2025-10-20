@@ -55,9 +55,7 @@ class TraceTapAddon:
     def __init__(self):
         """
         Initialize addon - called when module is loaded.
-
-        Note: Don't do heavy initialization here because mitmproxy may
-        re-import this module. Use lazy initialization instead.
+        
         """
         # Storage for captured request/response records
         self.records: List[Dict[str, Any]] = []
