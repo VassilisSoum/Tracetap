@@ -63,7 +63,6 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           chmod +x release/${{ matrix.artifact_name }}
-          # Note: macOS doesn't ship GNU `timeout`; the `|| true` ensures the step doesn't fail if missing
           timeout 5 release/${{ matrix.artifact_name }} --help || true
 
       - name: Test executable (Windows)
@@ -126,26 +125,33 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts/
-          pattern: |
-            executable-*
-            cert-script-*
-            tools
-          merge-multiple: true
 
       - name: Display structure
-        run: ls -R artifacts/
+        run: |
+          echo "=== Artifact structure ==="
+          ls -R artifacts/
+          echo ""
+          echo "=== All files ==="
+          find artifacts/ -type f
 
       - name: Prepare release files
         run: |
           mkdir -p release
-          cp -a artifacts/* release/ || true
+          
+          # Copy all files from artifact subfolders to release folder
+          find artifacts/ -type f -exec cp {} release/ \;
+          
+          # Make scripts and executables executable
           chmod +x release/*.sh 2>/dev/null || true
+          chmod +x release/tracetap-* 2>/dev/null || true
+          
+          echo "=== Files in release folder ==="
           ls -lh release/
 
       - name: Create checksums
         run: |
           cd release
-          sha256sum tracetap-* *.sh *.ps1 2>/dev/null > checksums.txt || true
+          sha256sum * > checksums.txt 2>/dev/null || true
           cat checksums.txt
 
       - name: Create Release
@@ -156,7 +162,73 @@ jobs:
           prerelease: false
           generate_release_notes: true
           body: |
+            ## 🚀 TraceTap Release ${{ github.ref_name }}
+            
+            HTTP/HTTPS traffic capture with AI-powered Postman export.
+            
             ## 📦 Downloads
-            ...
+            
+            Choose your platform:
+            
+            - **Linux (x64):** `tracetap-linux-x64`
+            - **macOS (Intel):** `tracetap-macos-x64`
+            - **macOS (Apple Silicon):** `tracetap-macos-arm64`
+            - **Windows (x64):** `tracetap-windows-x64.exe`
+            
+            ## 🔐 Certificate Installation
+            
+            Before using TraceTap, install the certificate:
+            
+            **Linux:**
+            ```bash
+            chmod +x chrome-cert-manager.sh
+            ./chrome-cert-manager.sh install
+            ```
+            
+            **macOS:**
+            ```bash
+            chmod +x macos-cert-manager.sh
+            ./macos-cert-manager.sh install
+            ```
+            
+            **Windows:**
+            ```powershell
+            powershell -ExecutionPolicy Bypass .\windows-cert-manager.ps1 install
+            ```
+            
+            ## 🚀 Quick Start
+            
+            ```bash
+            # Make executable (Linux/macOS)
+            chmod +x tracetap-linux-x64
+            
+            # Start capturing
+            ./tracetap-linux-x64 --listen 8080 --raw-log capture.json
+            
+            # Configure proxy
+            export HTTP_PROXY=http://localhost:8080
+            export HTTPS_PROXY=http://localhost:8080
+            
+            # Use your app - traffic is captured!
+            # Press Ctrl+C to stop and export
+            ```
+            
+            ## 📖 Documentation
+            
+            - [Quick Start Guide](https://github.com/VassilisSoum/tracetap/blob/main/docs/quick-start.md)
+            - [Getting Started](https://github.com/VassilisSoum/tracetap/blob/main/docs/getting-started.md)
+            - [AI Enhancement](https://github.com/VassilisSoum/tracetap/blob/main/docs/ai-enhancement.md)
+            - [Examples](https://github.com/VassilisSoum/tracetap/blob/main/docs/examples.md)
+            
+            ## ✅ Verify Download
+            
+            Check file integrity:
+            ```bash
+            sha256sum -c checksums.txt
+            ```
+            
+            ## 🐛 Issues?
+            
+            [Report bugs or request features](https://github.com/VassilisSoum/tracetap/issues)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
