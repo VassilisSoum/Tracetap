@@ -67,7 +67,7 @@ python tracetap-ai-postman.py capture.json \
 
 Open Postman → Import → Select `enhanced_collection.json` → Done! 🎉
 
-**[📖 Full Quick Start Guide](docs/quick-start.md)**
+**[📖 Full Start Guide](docs/getting-started.md)**
 
 ---
 
