@@ -139,7 +139,6 @@ jobs:
         run: |
           mkdir -p release
           cp -a artifacts/* release/ || true
-          cp README.md QUICK_START.md CERTIFICATE_INSTALLATION.md PLATFORM_COMPARISON.md WIREMOCK_WORKFLOW.md release/ 2>/dev/null || true
           chmod +x release/*.sh 2>/dev/null || true
           ls -lh release/
 

@@ -53,12 +53,12 @@ docker run -p 8080:8080 \
 # 1. Capture real payment API traffic
 ./tracetap-linux-x64 --listen 8080 \
   --raw-log payment_api.json \
-  --filter-host "payments.stage.eu.whitehatgaming.com" \
+  --filter-host "example.com" \
   --session "Payment API Capture"
 
 # 2. Make real payment requests through proxy
 export HTTPS_PROXY=http://localhost:8080
-curl -k https://payments.stage.eu.whitehatgaming.com/api/v1/transactions
+curl -k https://example.com/api/v1/transactions
 
 # 3. Stop TraceTap and convert to WireMock
 python tracetap2wiremock.py payment_api.json \
@@ -72,7 +72,7 @@ docker run -p 9000:8080 \
 
 # 5. Point your app to the mock
 # Change API base URL from:
-#   https://payments.stage.eu.whitehatgaming.com
+#   https://example.com
 # To:
 #   http://localhost:9000
 ```

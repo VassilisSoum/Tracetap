@@ -680,7 +680,7 @@ python tracetap2wiremock.py INPUT_FILE \
 ## See Also
 
 - [WireMock Request Matching Documentation](https://wiremock.org/docs/request-matching/)
-- [TraceTap README](README.md)
+- [TraceTap README](../README.md)
 - [WireMock Workflow Guide](WIREMOCK_WORKFLOW.md)
 
 ---

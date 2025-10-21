@@ -2,18 +2,6 @@
 
 Thank you for your interest in contributing to TraceTap! This document provides guidelines and instructions for contributing to the project.
 
-## 📋 Table of Contents
-
-- [Code of Conduct](#code-of-conduct)
-- [How Can I Contribute?](#how-can-i-contribute)
-- [Development Setup](#development-setup)
-- [Coding Standards](#coding-standards)
-- [Submitting Changes](#submitting-changes)
-- [Reporting Bugs](#reporting-bugs)
-- [Suggesting Features](#suggesting-features)
-- [Testing](#testing)
-- [Documentation](#documentation)
-
 ## 🤝 Code of Conduct
 
 ### Our Pledge
