@@ -213,20 +213,6 @@ jobs:
             # Press Ctrl+C to stop and export
             ```
             
-            ## 📖 Documentation
-            
-            - [Quick Start Guide](https://github.com/VassilisSoum/tracetap/blob/main/docs/quick-start.md)
-            - [Getting Started](https://github.com/VassilisSoum/tracetap/blob/main/docs/getting-started.md)
-            - [AI Enhancement](https://github.com/VassilisSoum/tracetap/blob/main/docs/ai-enhancement.md)
-            - [Examples](https://github.com/VassilisSoum/tracetap/blob/main/docs/examples.md)
-            
-            ## ✅ Verify Download
-            
-            Check file integrity:
-            ```bash
-            sha256sum -c checksums.txt
-            ```
-            
             ## 🐛 Issues?
             
             [Report bugs or request features](https://github.com/VassilisSoum/tracetap/issues)
