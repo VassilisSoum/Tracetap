@@ -71,40 +71,6 @@ Open Postman → Import → Select `enhanced_collection.json` → Done! 🎉
 
 ---
 
-## 📊 Example: Before & After
-
-### Before (Raw Capture)
-```
-📊 150 captured requests
-  • Mixed with tracking pixels, analytics, OPTIONS requests
-  • Hardcoded session tokens everywhere
-  • No organization
-```
-
-### After (AI Enhanced)
-```
-✨ 45 relevant API requests
-
-📁 Payment Configuration
-   • Get Payment Options
-   • Get Payment Method Deposit Limits
-   • Get Downtime Configurations
-   
-📁 Deposit Management
-   • Fetch Deposit Tiles
-   • Generate PXP Session Token
-   • Initiate Payment with Existing Method
-
-🔧 8 Collection Variables
-   • {{base_url}}: https:/example.com
-   • {{session_token}}: AAABmfze...
-   • {{payment_method}}: pxp_card_visa
-
-📝 Clear descriptions and test scenarios for each request
-```
-
----
-
 ## 🎯 Use Cases
 
 ### API Testing & Documentation
