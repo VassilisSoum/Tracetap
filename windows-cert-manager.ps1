@@ -358,48 +358,14 @@ function Show-Status {
     Write-Host ""
 }
 
-# Show usage
-function Show-Usage {
-    Write-Host @"
-Usage: .\windows-cert-manager.ps1 [COMMAND]
-
-Commands:
-    install     Install mitmproxy certificate in Windows Certificate Store
-    remove      Remove mitmproxy certificate from Certificate Store
-    status      Show certificate installation status
-    help        Show this help message
-
-Examples:
-    # First-time setup
-    powershell -ExecutionPolicy Bypass .\windows-cert-manager.ps1 install
-
-    # Check if certificate is installed
-    powershell -ExecutionPolicy Bypass .\windows-cert-manager.ps1 status
-
-    # Remove certificate
-    powershell -ExecutionPolicy Bypass .\windows-cert-manager.ps1 remove
-
-Notes:
-    - Works with Chrome, Edge, IE, and all Windows apps
-    - Firefox support requires certutil from NSS tools
-    - Certificate file: $CertPath
-    - Certificate Store: $CertStore
-    - Close and reopen browsers after install/remove
-    - Run as Administrator for system-wide installation
-
-"@
-}
-
 # Main script execution
 switch ($Command) {
     'install' { Install-Certificate }
     'remove'  { Remove-Certificate }
     'status'  { Show-Status }
-    'help'    { Show-Usage }
     default   {
         Write-Error-Custom "Invalid command: $Command"
         Write-Host ""
-        Show-Usage
         exit 1
     }
 }
