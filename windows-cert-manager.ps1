@@ -25,12 +25,12 @@ function Write-Success {
     Write-Host "✓ $Message" -ForegroundColor Green
 }
 
-function Write-ErrorMessage {
+function Write-Error-Custom {
     param([string]$Message)
     Write-Host "✗ $Message" -ForegroundColor Red
 }
 
-function Write-WarningMessage {
+function Write-Warning-Custom {
     param([string]$Message)
     Write-Host "⚠ $Message" -ForegroundColor Yellow
 }
@@ -124,7 +124,7 @@ function Install-Certificate {
 
     # Check for admin rights
     if (-not (Test-Administrator)) {
-        Write-WarningMessage "Not running as Administrator"
+        Write-Warning-Custom "Not running as Administrator"
         Write-Info "Installing for current user only (Chrome, Edge, IE)"
         Write-Info "For system-wide installation, run as Administrator"
         Write-Host ""
@@ -358,14 +358,50 @@ function Show-Status {
     Write-Host ""
 }
 
+# Show usage
+function Show-Usage {
+    Write-Host ""
+    Write-Host "Windows Certificate Manager for mitmproxy" -ForegroundColor Blue
+    Write-Host "==========================================" -ForegroundColor Blue
+    Write-Host ""
+    Write-Host "Usage: .\windows-cert-manager.ps1 [COMMAND]" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "Commands:" -ForegroundColor Yellow
+    Write-Host "    install     Install mitmproxy certificate in Windows Certificate Store"
+    Write-Host "    remove      Remove mitmproxy certificate from Certificate Store"
+    Write-Host "    status      Show certificate installation status"
+    Write-Host "    help        Show this help message"
+    Write-Host ""
+    Write-Host "Examples:" -ForegroundColor Yellow
+    Write-Host "    # First-time setup"
+    Write-Host "    powershell -ExecutionPolicy Bypass .\windows-cert-manager.ps1 install" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "    # Check if certificate is installed"
+    Write-Host "    powershell -ExecutionPolicy Bypass .\windows-cert-manager.ps1 status" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "    # Remove certificate"
+    Write-Host "    powershell -ExecutionPolicy Bypass .\windows-cert-manager.ps1 remove" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "Notes:" -ForegroundColor Yellow
+    Write-Host "    - Works with Chrome, Edge, IE, and all Windows apps"
+    Write-Host "    - Firefox support requires certutil from NSS tools"
+    Write-Host "    - Certificate file: $CertPath"
+    Write-Host "    - Certificate Store: $CertStore"
+    Write-Host "    - Close and reopen browsers after install/remove"
+    Write-Host "    - Run as Administrator for system-wide installation"
+    Write-Host ""
+}
+
 # Main script execution
 switch ($Command) {
     'install' { Install-Certificate }
     'remove'  { Remove-Certificate }
     'status'  { Show-Status }
+    'help'    { Show-Usage }
     default   {
         Write-Error-Custom "Invalid command: $Command"
         Write-Host ""
+        Show-Usage
         exit 1
     }
 }
