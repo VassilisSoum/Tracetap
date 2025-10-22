@@ -17,6 +17,12 @@ from pathlib import Path
 from typing import Dict, List, Set, Tuple, Optional, Any
 from datetime import datetime
 from urllib.parse import urlparse, parse_qs, urlencode
+from textwrap import dedent
+
+try:
+    import yaml
+except ImportError:  # pragma: no cover - optional dependency
+    yaml = None
 
 
 def extract_json_from_response(text: str) -> Optional[Dict]:
@@ -84,6 +90,318 @@ def normalize_url_for_matching(url: str) -> str:
     path_pattern = get_path_pattern(url)
     return f"{parsed.scheme}://{parsed.netloc}{path_pattern}"
 
+
+DEFAULT_FLOW_TEMPLATE = dedent("""\
+# FlowSpec version 1 canonical structure
+version: 1
+metadata:
+  title: "<short descriptive title>"
+  intent: "<plain-language summary of the user journey>"
+  tags: []
+flow:
+  - id: step_identifier
+    name: "Readable step name"
+    request:
+      method: GET
+      url: "https://api.example.com/path"
+      headers: {}
+      body: null
+    expect:
+      status: 200
+      assertions: []
+    notes: []
+""").strip()
+
+FLOW_PLACEHOLDER_HOST = "flow.local"
+
+
+def find_base_url(variables: Optional[List[Dict]]) -> Optional[str]:
+    """Extract a usable base URL from Claude's variable recommendations."""
+    if not variables:
+        return None
+
+    candidate_names = {"base_url", "baseurl", "base-url", "origin", "host", "basehost"}
+
+    for var in variables:
+        name = str(var.get('name', '')).lower()
+        if name not in candidate_names:
+            continue
+
+        raw_value = str(var.get('value', '')).strip()
+        if not raw_value:
+            continue
+
+        parsed = urlparse(raw_value if '://' in raw_value else f"https://{raw_value.lstrip('/')}")
+        if parsed.scheme and parsed.netloc:
+            return f"{parsed.scheme}://{parsed.netloc}".rstrip('/')
+
+    return None
+
+
+def ensure_absolute_url(url: str, variables: Optional[List[Dict]] = None) -> str:
+    """Ensure a URL has scheme and host information for matching purposes."""
+    if not url:
+        return ''
+
+    candidate = url.strip()
+    if variables:
+        candidate = replace_variables_in_url(candidate, variables)
+    candidate = candidate.strip()
+    if not candidate:
+        return ''
+
+    parsed = urlparse(candidate)
+    base_url = find_base_url(variables)
+
+    if parsed.scheme and parsed.netloc:
+        return candidate
+
+    if parsed.netloc and not parsed.scheme:
+        scheme = urlparse(base_url or '').scheme or 'https'
+        query = f"?{parsed.query}" if parsed.query else ''
+        return f"{scheme}://{parsed.netloc}{parsed.path}{query}"
+
+    if parsed.scheme and not parsed.netloc:
+        host = urlparse(base_url or '').netloc or FLOW_PLACEHOLDER_HOST
+        query = f"?{parsed.query}" if parsed.query else ''
+        return f"{parsed.scheme}://{host}{parsed.path}{query}"
+
+    if candidate.startswith('//'):
+        return 'https:' + candidate
+
+    if candidate.startswith('/'):
+        target_base = base_url or f"https://{FLOW_PLACEHOLDER_HOST}"
+        return f"{target_base.rstrip('/')}{candidate}"
+
+    target_base = base_url or f"https://{FLOW_PLACEHOLDER_HOST}"
+    return f"{target_base.rstrip('/')}/{candidate.lstrip('/')}"
+
+
+def compute_flow_signature(method: str, url: str, variables: Optional[List[Dict]] = None) -> Tuple[str, str, str]:
+    """Create a normalized signature (method, host, path pattern) for flow matching."""
+    absolute_url = ensure_absolute_url(url, variables)
+    method_upper = (method or '').upper()
+
+    if not absolute_url:
+        return method_upper, '', ''
+
+    parsed = urlparse(absolute_url)
+    host = parsed.netloc.lower()
+    path_pattern = get_path_pattern(absolute_url)
+    return method_upper, host, path_pattern
+
+
+def build_flow_map(flow_spec: Dict[str, Any], variables: List[Dict]) -> Tuple[Dict[Tuple[str, str, str], Dict[str, Any]], Dict[str, Dict[str, Any]]]:
+    """Create lookup tables for flow step ordering."""
+    flow_map: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
+    usage: Dict[str, Dict[str, Any]] = {}
+
+    for order, step in enumerate(flow_spec.get('flow', []) or []):
+        if not isinstance(step, dict):
+            continue
+
+        request = step.get('request', {})
+        method = request.get('method')
+        url = request.get('url')
+        step_id = step.get('id')
+
+        if not method or not url or not step_id:
+            continue
+
+        signature = compute_flow_signature(method, url, variables)
+        entry = {'order': order, 'step': step, 'id': step_id}
+
+        if signature not in flow_map:
+            flow_map[signature] = entry
+
+        hostless_signature = (signature[0], '', signature[2])
+        if hostless_signature not in flow_map:
+            flow_map[hostless_signature] = entry
+
+        usage[step_id] = {'used': False, 'step': step, 'order': order}
+
+    return flow_map, usage
+
+
+def summarize_unique_endpoints(captured_data: Dict, limit: int) -> List[Dict[str, Any]]:
+    """Summarize up to `limit` unique endpoints from the capture."""
+    seen: Set[Tuple[str, str, str]] = set()
+    summary: List[Dict[str, Any]] = []
+
+    requests = captured_data.get('requests', []) or []
+    for req in requests:
+        url = req.get('url')
+        if not url:
+            continue
+
+        parsed = urlparse(url)
+        host = parsed.netloc or ''
+        path = parsed.path or '/'
+        method = (req.get('method') or 'GET').upper()
+        key = (method, host.lower(), path)
+
+        if key in seen:
+            continue
+
+        seen.add(key)
+        summary.append({
+            'method': method,
+            'host': host,
+            'path': path or '/',
+            'status': req.get('status')
+        })
+
+        if limit and len(summary) >= limit:
+            break
+
+    return summary
+
+
+def format_endpoints_summary(endpoints: List[Dict[str, Any]]) -> str:
+    """Format the endpoint summary for Claude prompting."""
+    lines = []
+    for idx, endpoint in enumerate(endpoints, 1):
+        status = endpoint.get('status')
+        status_text = f"status≈{status}" if status not in (None, '') else "status≈unknown"
+        host = endpoint.get('host') or ''
+        path = endpoint.get('path') or '/'
+        host_path = f"{host}{path}" if host else path
+        lines.append(f"{idx}. {endpoint.get('method', 'GET')} {host_path} ({status_text})")
+    return '\n'.join(lines)
+
+
+def strip_code_fences(text: str) -> str:
+    """Remove Markdown-style code fences from Claude output."""
+    fenced_match = re.match(r"```(?:yaml|yml)?\s*(.*?)\s*```", text, re.DOTALL | re.IGNORECASE)
+    if fenced_match:
+        return fenced_match.group(1)
+    return text
+
+
+def build_flow_prompt(flow_template: str, flow_intent: str, endpoints_summary: str) -> str:
+    """Construct the Claude prompt for flow inference."""
+    return dedent(f"""
+You are TraceTap's FlowSpec author. Given captured HTTP endpoints and a human intent, produce a valid FlowSpec YAML.
+
+FlowSpec canonical template:
+---
+{flow_template}
+---
+
+User intent:
+{flow_intent.strip()}
+
+Captured endpoints (deduplicated, up to the requested limit):
+{endpoints_summary}
+
+Guidelines:
+- Follow FlowSpec version 1 exactly.
+- Cover the key steps that fulfil the user's intent using the available endpoints.
+- Prefer sequential ordering that mirrors the user flow.
+- Include helpful names and keep IDs unique.
+- Output ONLY raw YAML without Markdown fences or commentary.
+""").strip()
+
+
+def infer_flow_yaml(captured_data: Dict, api_key: str, flow_intent: str, flow_template: str, max_endpoints: int) -> Optional[str]:
+    """Use Claude to infer a FlowSpec YAML description from captured endpoints."""
+    endpoints = summarize_unique_endpoints(captured_data, max(1, max_endpoints))
+
+    if not endpoints:
+        print("⚠️  No captured endpoints available for flow inference.")
+        return None
+
+    summary_text = format_endpoints_summary(endpoints)
+    prompt = build_flow_prompt(flow_template, flow_intent, summary_text)
+
+    client = anthropic.Anthropic(api_key=api_key)
+
+    try:
+        message = client.messages.create(
+            model="claude-sonnet-4-5-20250929",
+            temperature=0.2,
+            max_tokens=6000,
+            messages=[{"role": "user", "content": prompt}]
+        )
+    except Exception as exc:  # pragma: no cover - network / API failure
+        print(f"❌ Flow inference request failed: {exc}")
+        return None
+
+    text_blocks: List[str] = []
+    for block in message.content:
+        if hasattr(block, 'text'):
+            text_blocks.append(block.text)
+        elif isinstance(block, dict) and 'text' in block:
+            text_blocks.append(str(block['text']))
+
+    raw_output = ''.join(text_blocks).strip()
+    cleaned = strip_code_fences(raw_output)
+
+    if not cleaned.strip():
+        return None
+
+    return cleaned.strip()
+
+
+def parse_flow_document(flow_text: str) -> Optional[Dict[str, Any]]:
+    """Parse YAML or JSON flow content into a Python dictionary."""
+    if not flow_text or not flow_text.strip():
+        return None
+
+    if yaml is not None:
+        try:
+            parsed = yaml.safe_load(flow_text)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            pass
+
+    try:
+        parsed_json = json.loads(flow_text)
+        if isinstance(parsed_json, dict):
+            return parsed_json
+    except json.JSONDecodeError:
+        return None
+
+    return None
+
+
+def validate_flow_spec(flow_spec: Dict[str, Any]) -> Tuple[bool, str]:
+    """Validate required FlowSpec structure."""
+    if not isinstance(flow_spec, dict):
+        return False, "Flow specification must be a mapping object."
+
+    if flow_spec.get('version') != 1:
+        return False, "FlowSpec version must be 1."
+
+    flow_steps = flow_spec.get('flow')
+    if not isinstance(flow_steps, list) or not flow_steps:
+        return False, "FlowSpec must contain a non-empty 'flow' list."
+
+    seen_ids: Set[str] = set()
+    for idx, step in enumerate(flow_steps):
+        if not isinstance(step, dict):
+            return False, f"Flow step #{idx + 1} must be a mapping."
+
+        step_id = step.get('id')
+        if not step_id:
+            return False, f"Flow step #{idx + 1} is missing an 'id'."
+
+        if step_id in seen_ids:
+            return False, f"Duplicate flow step id detected: {step_id}"
+
+        seen_ids.add(step_id)
+
+        request = step.get('request')
+        if not isinstance(request, dict):
+            return False, f"Flow step '{step_id}' is missing a request definition."
+
+        method = request.get('method')
+        url = request.get('url')
+        if not method or not url:
+            return False, f"Flow step '{step_id}' must define request.method and request.url."
+
+    return True, ''
 
 def enhance_with_claude(captured_data: Dict, api_key: str, instructions: Optional[str] = None) -> str:
     """
@@ -415,14 +733,61 @@ def debug_matching_issue(filtered_requests: List[Dict], enhanced_requests: List[
     print("\n" + "=" * 70 + "\n")
 
 
-def generate_postman_collection(enhanced_data: Dict, session_name: str) -> Dict:
+def generate_postman_collection(
+    enhanced_data: Dict,
+    session_name: str,
+    flow_spec: Optional[Dict[str, Any]] = None,
+    flow_strict: bool = False
+) -> Dict:
     """
-    Generate Postman Collection v2.1 with Claude's enhancements and NO duplicates
+    Generate Postman Collection v2.1 with Claude's enhancements and optional flow ordering.
     """
     recommendations = enhanced_data['recommendations']['recommendations']
     enhanced_requests = enhanced_data['recommendations'].get('enhanced_requests', [])
     filtered_requests = enhanced_data['filtered_requests']
     variables = recommendations.get('variables', [])
+
+    flow_map: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
+    flow_usage: Dict[str, Dict[str, Any]] = {}
+
+    if flow_spec:
+        flow_map, flow_usage = build_flow_map(flow_spec, variables)
+        print(f"\n🔁 Applying inferred flow ordering with {len(flow_usage)} steps")
+
+    request_counter = 0
+
+    def annotate_request(postman_request: Dict[str, Any], method: str, original_url: str, url_with_vars: str) -> None:
+        nonlocal request_counter
+        request_counter += 1
+        postman_request['_original_index'] = request_counter
+
+        if not flow_map:
+            return
+
+        signatures_to_try = [
+            compute_flow_signature(method, original_url),
+        ]
+
+        if url_with_vars and url_with_vars != original_url:
+            signatures_to_try.append(compute_flow_signature(method, url_with_vars, variables))
+
+        seen_signatures = set()
+        for signature in signatures_to_try:
+            if not signature or signature in seen_signatures:
+                continue
+            seen_signatures.add(signature)
+
+            entry = flow_map.get(signature)
+            if not entry:
+                entry = flow_map.get((signature[0], '', signature[2]))
+
+            if entry:
+                postman_request['_flow_order'] = entry['order']
+                postman_request['_flow_step_id'] = entry['id']
+                usage_entry = flow_usage.get(entry['id'])
+                if usage_entry:
+                    usage_entry['used'] = True
+                break
 
     # 🔧 DEBUG: Print initial state
     print(f"\n{'=' * 70}")
@@ -617,6 +982,7 @@ def generate_postman_collection(enhanced_data: Dict, session_name: str) -> Dict:
         if description_parts:
             postman_request['request']['description'] = '\n'.join(description_parts)
 
+        annotate_request(postman_request, method, original_url, url_with_vars)
         # Add to folder
         folders[folder_name]['item'].append(postman_request)
         added_patterns.add(request_id)
@@ -686,14 +1052,21 @@ def generate_postman_collection(enhanced_data: Dict, session_name: str) -> Dict:
                         'raw': {
                             'language': 'json'
                         }
+                        }
                     }
-                }
 
+            annotate_request(postman_request, method, original_url, url_with_vars)
             folders['Uncategorized']['item'].append(postman_request)
             added_patterns.add(request_id)
 
     if unmatched_count > 0:
         print(f"  📊 Added {unmatched_count} unmatched requests to Uncategorized")
+
+    missing_flow_steps: List[Dict[str, Any]] = []
+    matched_flow_steps_count = 0
+    if flow_map:
+        missing_flow_steps = [info for info in flow_usage.values() if not info.get('used')]
+        matched_flow_steps_count = len(flow_usage) - len(missing_flow_steps)
 
     # Print match summary
     print(f"\n{'=' * 70}")
@@ -703,10 +1076,44 @@ def generate_postman_collection(enhanced_data: Dict, session_name: str) -> Dict:
     print(f"  📝 Unmatched (added to Uncategorized): {unmatched_count if 'unmatched_count' in locals() else 0}")
     print(f"  ❌ Enhanced requests without captures: {no_match_count}")
     print(f"  📁 Total added to collection: {len(added_patterns)}")
+    if flow_map:
+        print(f"  🔁 Flow steps aligned: {matched_flow_steps_count}/{len(flow_usage)}")
+        if missing_flow_steps:
+            print(f"  ⚠️ Flow steps without matches:")
+            for info in missing_flow_steps[:5]:
+                step = info['step']
+                print(f"     - {step.get('id')} ({step.get('name', 'Unnamed step')})")
+            if len(missing_flow_steps) > 5:
+                print(f"     ... and {len(missing_flow_steps) - 5} more")
     print(f"{'=' * 70}\n")
+
+    if flow_map and flow_strict and missing_flow_steps:
+        raise ValueError("Flow strict mode: some flow steps were not matched to captured requests.")
 
     # Remove empty folders
     folders = {k: v for k, v in folders.items() if v['item']}
+
+    ordered_folder_entries: List[Tuple[float, int, Dict[str, Any]]] = []
+    for idx, (folder_name, folder) in enumerate(folders.items()):
+        items = folder['item']
+        if flow_map:
+            items.sort(key=lambda item: (item.get('_flow_order', float('inf')), item.get('_original_index', 0)))
+        else:
+            items.sort(key=lambda item: item.get('_original_index', 0))
+
+        folder_flow_index = min((item.get('_flow_order', float('inf')) for item in items), default=float('inf'))
+
+        for item in items:
+            item.pop('_original_index', None)
+            item.pop('_flow_order', None)
+            item.pop('_flow_step_id', None)
+
+        ordered_folder_entries.append((folder_flow_index, idx, folder))
+
+    if flow_map:
+        ordered_folders = [entry[2] for entry in sorted(ordered_folder_entries, key=lambda x: (x[0], x[1]))]
+    else:
+        ordered_folders = [entry[2] for entry in sorted(ordered_folder_entries, key=lambda x: x[1])]
 
     # Build final collection
     collection = {
@@ -721,7 +1128,7 @@ def generate_postman_collection(enhanced_data: Dict, session_name: str) -> Dict:
             ),
             'schema': 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json'
         },
-        'item': list(folders.values()),
+        'item': ordered_folders,
         'variable': [
             {
                 'key': var['name'],
@@ -760,6 +1167,13 @@ def main():
     parser.add_argument('--output', default='enhanced_collection.json', help='Output file')
     parser.add_argument('--instructions', help='Additional instructions for Claude')
     parser.add_argument('--save-analysis', help='Save Claude analysis to file')
+    parser.add_argument('--infer-flow', action='store_true', help='Infer a FlowSpec YAML from the capture and flow intent')
+    parser.add_argument('--flow-intent', help='Plain text description of the desired flow order')
+    parser.add_argument('--flow-intent-file', help='File containing the flow intent description')
+    parser.add_argument('--flow-template', help='Optional FlowSpec template YAML to include in the Claude prompt')
+    parser.add_argument('--emit-flow', default='flow.generated.yaml', help='Where to write the generated FlowSpec YAML')
+    parser.add_argument('--max-endpoints', type=int, default=120, help='Maximum unique endpoints summarized for flow inference')
+    parser.add_argument('--flow-strict', action='store_true', help='Require every flow step to match a captured request')
 
     args = parser.parse_args()
 
@@ -777,6 +1191,100 @@ def main():
         captured_data = json.load(f)
 
     print(f"📊 Found {len(captured_data.get('requests', []))} captured requests")
+
+    flow_spec_data: Optional[Dict[str, Any]] = None
+    flow_emit_path: Optional[Path] = None
+    infer_flow_enabled = args.infer_flow
+
+    if infer_flow_enabled:
+        flow_emit_path = Path(args.emit_flow)
+        flow_intent_parts: List[str] = []
+
+        if args.flow_intent:
+            flow_intent_parts.append(args.flow_intent.strip())
+
+        if args.flow_intent_file:
+            try:
+                flow_intent_file_text = Path(args.flow_intent_file).read_text()
+                flow_intent_parts.append(flow_intent_file_text.strip())
+            except OSError as exc:
+                print(f"❌ Failed to read flow intent file {args.flow_intent_file}: {exc}")
+                if args.flow_strict:
+                    return
+                print("⚠️  Skipping flow inference due to missing intent file.")
+                infer_flow_enabled = False
+
+        flow_intent_text = '\n'.join(part for part in flow_intent_parts if part).strip()
+
+        if infer_flow_enabled and not flow_intent_text:
+            print("❌ Flow intent is required when using --infer-flow. Provide --flow-intent or --flow-intent-file.")
+            if args.flow_strict:
+                return
+            print("⚠️  Continuing without inferred flow.")
+            infer_flow_enabled = False
+
+        flow_template_text = DEFAULT_FLOW_TEMPLATE
+        if infer_flow_enabled and args.flow_template:
+            try:
+                flow_template_text = Path(args.flow_template).read_text()
+            except OSError as exc:
+                print(f"⚠️  Could not read flow template {args.flow_template}: {exc}")
+                if args.flow_strict:
+                    return
+                print("⚠️  Falling back to built-in FlowSpec template.")
+                flow_template_text = DEFAULT_FLOW_TEMPLATE
+
+        if infer_flow_enabled:
+            print("🧠 Inferring flow specification with Claude...")
+            flow_yaml_text = infer_flow_yaml(
+                captured_data,
+                api_key,
+                flow_intent_text,
+                flow_template_text,
+                args.max_endpoints,
+            )
+
+            # Persist raw output regardless of validity
+            try:
+                flow_emit_path.parent.mkdir(parents=True, exist_ok=True)
+            except OSError:
+                pass
+
+            flow_yaml_to_save = flow_yaml_text or ''
+
+            try:
+                flow_emit_path.write_text(flow_yaml_to_save)
+                print(f"💾 Wrote FlowSpec draft to {flow_emit_path}")
+            except OSError as exc:
+                print(f"❌ Could not write FlowSpec file {flow_emit_path}: {exc}")
+                if args.flow_strict:
+                    return
+
+            if not flow_yaml_text:
+                print("⚠️  Claude did not return FlowSpec content. Please edit the generated file manually.")
+            else:
+                flow_spec_candidate = parse_flow_document(flow_yaml_text)
+                if flow_spec_candidate is None:
+                    print("❌ Could not parse Claude's FlowSpec output.")
+                    print(f"   → Please review and fix {flow_emit_path} manually.")
+                    if args.flow_strict:
+                        return
+                else:
+                    valid, error = validate_flow_spec(flow_spec_candidate)
+                    if not valid:
+                        print(f"❌ FlowSpec validation failed: {error}")
+                        print(f"   → Please review and fix {flow_emit_path} manually.")
+                        if args.flow_strict:
+                            return
+                    else:
+                        flow_spec_data = flow_spec_candidate
+                        print(f"✅ FlowSpec validated with {len(flow_spec_candidate.get('flow', []))} steps")
+
+    if args.flow_strict and flow_spec_data is None:
+        target_path = flow_emit_path or Path(args.emit_flow)
+        print("❌ Flow strict mode requires a valid FlowSpec. Please review the generated file and try again.")
+        print(f"   → Expected FlowSpec at: {target_path}")
+        return
 
     # Enhance with Claude
     print("🤖 Analyzing with Claude AI...")
@@ -800,7 +1308,18 @@ def main():
     # Generate collection
     print("📝 Generating enhanced Postman collection...")
     session_name = captured_data.get('session', 'TraceTap Session')
-    collection = generate_postman_collection(enhanced_data, session_name)
+    try:
+        collection = generate_postman_collection(
+            enhanced_data,
+            session_name,
+            flow_spec=flow_spec_data,
+            flow_strict=args.flow_strict,
+        )
+    except ValueError as exc:
+        print(f"❌ {exc}")
+        if flow_emit_path or args.emit_flow:
+            print(f"   → Update the flow definition at {flow_emit_path or Path(args.emit_flow)} and rerun.")
+        return
 
     # Save collection
     with open(args.output, 'w') as f:
@@ -820,6 +1339,10 @@ def main():
     print(f"   - Unique endpoints in collection: {total_items}")
     print(f"   - Folders: {len(collection.get('item', []))}")
     print(f"   - Variables: {len(variables)}")
+    if args.infer_flow:
+        flow_steps = flow_spec_data.get('flow', []) if flow_spec_data else []
+        print(f"   - Flow steps inferred: {len(flow_steps)}")
+        print(f"   - Flow YAML: {flow_emit_path or Path(args.emit_flow)}")
 
     if variables:
         print(f"\n🔧 Collection Variables:")
