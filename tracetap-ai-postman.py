@@ -1,1367 +1,1061 @@
 #!/usr/bin/env python3
 """
-TraceTap AI-Powered Postman Collection Enhancer
+TraceTap AI Postman Collection Generator
 
-Enhances raw TraceTap captures with Claude AI to create clean, organized Postman collections.
-
-Usage:
-    python tracetap-ai-postman.py capture.json --output enhanced.json
-    python tracetap-ai-postman.py capture.json --merge-with existing.json --output existing.json
+This script converts raw HTTP capture logs into Postman collections,
+optionally guided by a flow YAML file that defines the expected sequence.
 """
 
 import json
-import anthropic
+import yaml
+import argparse
+import sys
 import os
 import re
-from pathlib import Path
-from typing import Dict, List, Set, Tuple, Optional, Any
+from typing import List, Dict, Any, Optional
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from datetime import datetime
-from urllib.parse import urlparse, parse_qs, urlencode
+from collections import defaultdict
 from textwrap import dedent
 
 try:
-    import yaml
-except ImportError:  # pragma: no cover - optional dependency
-    yaml = None
+    import anthropic
+
+    ANTHROPIC_AVAILABLE = True
+except ImportError:
+    ANTHROPIC_AVAILABLE = False
 
 
-def extract_json_from_response(text: str) -> Optional[Dict]:
-    """
-    Extract JSON from Claude's response, handling markdown code blocks
-    """
-    # Try to find JSON in code blocks first
-    json_pattern = r'```(?:json)?\s*(\{.*?\})\s*```'
-    matches = re.findall(json_pattern, text, re.DOTALL)
+class URLMatcher:
+    """Handles URL matching logic with various strategies"""
 
-    if matches:
-        for match in matches:
-            try:
-                return json.loads(match)
-            except json.JSONDecodeError:
+    @staticmethod
+    def normalize_url(url: str, strip_query: bool = False) -> str:
+        """Normalize URL for comparison"""
+        parsed = urlparse(url)
+
+        if strip_query:
+            # Remove query parameters
+            return urlunparse((
+                parsed.scheme,
+                parsed.netloc,
+                parsed.path,
+                '',
+                '',
+                ''
+            ))
+
+        # Sort query parameters for consistent comparison
+        query_dict = parse_qs(parsed.query)
+        sorted_query = urlencode(sorted(query_dict.items()), doseq=True)
+
+        return urlunparse((
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            parsed.params,
+            sorted_query,
+            ''  # Remove fragment
+        ))
+
+    @staticmethod
+    def urls_match(url1: str, url2: str, strict: bool = False) -> bool:
+        """
+        Compare two URLs for matching
+
+        Args:
+            url1: First URL
+            url2: Second URL
+            strict: If True, requires exact match including query params
+
+        Returns:
+            True if URLs match according to criteria
+        """
+        # Exact match first
+        if url1 == url2:
+            return True
+
+        # Normalize and compare
+        norm1 = URLMatcher.normalize_url(url1, strip_query=not strict)
+        norm2 = URLMatcher.normalize_url(url2, strip_query=not strict)
+
+        if norm1 == norm2:
+            return True
+
+        # If not strict, try without query parameters
+        if not strict:
+            norm1_no_query = URLMatcher.normalize_url(url1, strip_query=True)
+            norm2_no_query = URLMatcher.normalize_url(url2, strip_query=True)
+            return norm1_no_query == norm2_no_query
+
+        return False
+
+    @staticmethod
+    def extract_base_url(url: str) -> str:
+        """Extract base URL without query parameters"""
+        return URLMatcher.normalize_url(url, strip_query=True)
+
+
+class RawLogProcessor:
+    """Processes raw HTTP capture logs"""
+
+    def __init__(self, log_data: List[Dict[str, Any]]):
+        self.log_entries = log_data
+        self.url_index = self._build_url_index()
+
+    def _build_url_index(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Build an index of log entries by base URL for faster lookup"""
+        index = defaultdict(list)
+        for entry in self.log_entries:
+            base_url = URLMatcher.extract_base_url(entry.get('url', ''))
+            index[base_url].append(entry)
+        return index
+
+    def find_matching_entry(self,
+                            url: str,
+                            method: Optional[str] = None,
+                            strict: bool = False,
+                            used_entries: Optional[set] = None) -> Optional[Dict[str, Any]]:
+        """
+        Find a log entry matching the given URL and method
+
+        Args:
+            url: URL to match
+            method: HTTP method to match (optional)
+            strict: Whether to use strict URL matching
+            used_entries: Set of already used entry indices to avoid duplicates
+
+        Returns:
+            Matching log entry or None
+        """
+        if used_entries is None:
+            used_entries = set()
+
+        # First try exact match with method
+        for idx, entry in enumerate(self.log_entries):
+            if idx in used_entries:
                 continue
 
-    # Try to parse the entire response as JSON
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        # Last resort: try to find JSON object in the text
-        json_start = text.find('{')
-        json_end = text.rfind('}') + 1
-        if json_start != -1 and json_end > json_start:
-            try:
-                return json.loads(text[json_start:json_end])
-            except json.JSONDecodeError:
-                pass
+            entry_url = entry.get('url', '')
+            entry_method = entry.get('method', '')
 
-    return None
+            # Check URL match
+            if URLMatcher.urls_match(url, entry_url, strict=strict):
+                # If method specified, must match
+                if method and entry_method.upper() != method.upper():
+                    continue
+                return entry
 
+        # If strict and no match found, try without query parameters
+        if strict:
+            base_url = URLMatcher.extract_base_url(url)
+            if base_url in self.url_index:
+                for entry in self.url_index[base_url]:
+                    idx = self.log_entries.index(entry)
+                    if idx in used_entries:
+                        continue
 
-def get_path_pattern(url: str) -> str:
-    """
-    Get path pattern for matching, replacing variable placeholders and long IDs with wildcards
+                    entry_method = entry.get('method', '')
+                    if method and entry_method.upper() != method.upper():
+                        continue
+                    return entry
 
-    Examples:
-        /session/ABC123... -> /session/*
-        /session/{{token}} -> /session/*
-    """
-    parsed = urlparse(url)
-    path = parsed.path
-
-    # Remove Postman variable placeholders {{variable}}
-    path = re.sub(r'\{\{[^}]+\}\}', '*', path)
-
-    # Replace long alphanumeric strings (session tokens, UUIDs, IDs) with wildcards
-    # Matches sequences of 30+ alphanumeric characters, underscores, or hyphens
-    path = re.sub(r'/[A-Za-z0-9_-]{30,}(?=/|$)', '/*', path)
-
-    # Also replace UUIDs
-    path = re.sub(r'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?=/|$)', '/*', path,
-                  flags=re.IGNORECASE)
-
-    return path
-
-
-def normalize_url_for_matching(url: str) -> str:
-    """
-    Normalize URL for matching (removes tokens, IDs, query params)
-    Returns: scheme://host/path_pattern
-    """
-    parsed = urlparse(url)
-    path_pattern = get_path_pattern(url)
-    return f"{parsed.scheme}://{parsed.netloc}{path_pattern}"
-
-
-DEFAULT_FLOW_TEMPLATE = dedent("""\
-# FlowSpec version 1 canonical structure
-version: 1
-metadata:
-  title: "<short descriptive title>"
-  intent: "<plain-language summary of the user journey>"
-  tags: []
-flow:
-  - id: step_identifier
-    name: "Readable step name"
-    request:
-      method: GET
-      url: "https://api.example.com/path"
-      headers: {}
-      body: null
-    expect:
-      status: 200
-      assertions: []
-    notes: []
-""").strip()
-
-FLOW_PLACEHOLDER_HOST = "flow.local"
-
-
-def find_base_url(variables: Optional[List[Dict]]) -> Optional[str]:
-    """Extract a usable base URL from Claude's variable recommendations."""
-    if not variables:
         return None
 
-    candidate_names = {"base_url", "baseurl", "base-url", "origin", "host", "basehost"}
 
-    for var in variables:
-        name = str(var.get('name', '')).lower()
-        if name not in candidate_names:
-            continue
-
-        raw_value = str(var.get('value', '')).strip()
-        if not raw_value:
-            continue
-
-        parsed = urlparse(raw_value if '://' in raw_value else f"https://{raw_value.lstrip('/')}")
-        if parsed.scheme and parsed.netloc:
-            return f"{parsed.scheme}://{parsed.netloc}".rstrip('/')
-
-    return None
-
-
-def ensure_absolute_url(url: str, variables: Optional[List[Dict]] = None) -> str:
-    """Ensure a URL has scheme and host information for matching purposes."""
-    if not url:
-        return ''
-
-    candidate = url.strip()
-    if variables:
-        candidate = replace_variables_in_url(candidate, variables)
-    candidate = candidate.strip()
-    if not candidate:
-        return ''
-
-    parsed = urlparse(candidate)
-    base_url = find_base_url(variables)
-
-    if parsed.scheme and parsed.netloc:
-        return candidate
-
-    if parsed.netloc and not parsed.scheme:
-        scheme = urlparse(base_url or '').scheme or 'https'
-        query = f"?{parsed.query}" if parsed.query else ''
-        return f"{scheme}://{parsed.netloc}{parsed.path}{query}"
-
-    if parsed.scheme and not parsed.netloc:
-        host = urlparse(base_url or '').netloc or FLOW_PLACEHOLDER_HOST
-        query = f"?{parsed.query}" if parsed.query else ''
-        return f"{parsed.scheme}://{host}{parsed.path}{query}"
-
-    if candidate.startswith('//'):
-        return 'https:' + candidate
-
-    if candidate.startswith('/'):
-        target_base = base_url or f"https://{FLOW_PLACEHOLDER_HOST}"
-        return f"{target_base.rstrip('/')}{candidate}"
-
-    target_base = base_url or f"https://{FLOW_PLACEHOLDER_HOST}"
-    return f"{target_base.rstrip('/')}/{candidate.lstrip('/')}"
-
-
-def compute_flow_signature(method: str, url: str, variables: Optional[List[Dict]] = None) -> Tuple[str, str, str]:
-    """Create a normalized signature (method, host, path pattern) for flow matching."""
-    absolute_url = ensure_absolute_url(url, variables)
-    method_upper = (method or '').upper()
-
-    if not absolute_url:
-        return method_upper, '', ''
-
-    parsed = urlparse(absolute_url)
-    host = parsed.netloc.lower()
-    path_pattern = get_path_pattern(absolute_url)
-    return method_upper, host, path_pattern
-
-
-def build_flow_map(flow_spec: Dict[str, Any], variables: List[Dict]) -> Tuple[Dict[Tuple[str, str, str], Dict[str, Any]], Dict[str, Dict[str, Any]]]:
-    """Create lookup tables for flow step ordering."""
-    flow_map: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
-    usage: Dict[str, Dict[str, Any]] = {}
-
-    for order, step in enumerate(flow_spec.get('flow', []) or []):
-        if not isinstance(step, dict):
-            continue
-
-        request = step.get('request', {})
-        method = request.get('method')
-        url = request.get('url')
-        step_id = step.get('id')
-
-        if not method or not url or not step_id:
-            continue
-
-        signature = compute_flow_signature(method, url, variables)
-        entry = {'order': order, 'step': step, 'id': step_id}
-
-        if signature not in flow_map:
-            flow_map[signature] = entry
-
-        hostless_signature = (signature[0], '', signature[2])
-        if hostless_signature not in flow_map:
-            flow_map[hostless_signature] = entry
-
-        usage[step_id] = {'used': False, 'step': step, 'order': order}
-
-    return flow_map, usage
-
-
-def summarize_unique_endpoints(captured_data: Dict, limit: int) -> List[Dict[str, Any]]:
-    """Summarize up to `limit` unique endpoints from the capture."""
-    seen: Set[Tuple[str, str, str]] = set()
-    summary: List[Dict[str, Any]] = []
-
-    requests = captured_data.get('requests', []) or []
-    for req in requests:
-        url = req.get('url')
-        if not url:
-            continue
-
-        parsed = urlparse(url)
-        host = parsed.netloc or ''
-        path = parsed.path or '/'
-        method = (req.get('method') or 'GET').upper()
-        key = (method, host.lower(), path)
-
-        if key in seen:
-            continue
-
-        seen.add(key)
-        summary.append({
-            'method': method,
-            'host': host,
-            'path': path or '/',
-            'status': req.get('status')
-        })
-
-        if limit and len(summary) >= limit:
-            break
-
-    return summary
-
-
-def format_endpoints_summary(endpoints: List[Dict[str, Any]]) -> str:
-    """Format the endpoint summary for Claude prompting."""
-    lines = []
-    for idx, endpoint in enumerate(endpoints, 1):
-        status = endpoint.get('status')
-        status_text = f"status≈{status}" if status not in (None, '') else "status≈unknown"
-        host = endpoint.get('host') or ''
-        path = endpoint.get('path') or '/'
-        host_path = f"{host}{path}" if host else path
-        lines.append(f"{idx}. {endpoint.get('method', 'GET')} {host_path} ({status_text})")
-    return '\n'.join(lines)
-
-
-def strip_code_fences(text: str) -> str:
-    """Remove Markdown-style code fences from Claude output."""
-    fenced_match = re.match(r"```(?:yaml|yml)?\s*(.*?)\s*```", text, re.DOTALL | re.IGNORECASE)
-    if fenced_match:
-        return fenced_match.group(1)
-    return text
-
-
-def build_flow_prompt(flow_template: str, flow_intent: str, endpoints_summary: str) -> str:
-    """Construct the Claude prompt for flow inference."""
-    return dedent(f"""
-You are TraceTap's FlowSpec author. Given captured HTTP endpoints and a human intent, produce a valid FlowSpec YAML.
-
-FlowSpec canonical template:
----
-{flow_template}
----
-
-User intent:
-{flow_intent.strip()}
-
-Captured endpoints (deduplicated, up to the requested limit):
-{endpoints_summary}
-
-Guidelines:
-- Follow FlowSpec version 1 exactly.
-- Cover the key steps that fulfil the user's intent using the available endpoints.
-- Prefer sequential ordering that mirrors the user flow.
-- Include helpful names and keep IDs unique.
-- Output ONLY raw YAML without Markdown fences or commentary.
-""").strip()
-
-
-def infer_flow_yaml(captured_data: Dict, api_key: str, flow_intent: str, flow_template: str, max_endpoints: int) -> Optional[str]:
-    """Use Claude to infer a FlowSpec YAML description from captured endpoints."""
-    endpoints = summarize_unique_endpoints(captured_data, max(1, max_endpoints))
-
-    if not endpoints:
-        print("⚠️  No captured endpoints available for flow inference.")
-        return None
-
-    summary_text = format_endpoints_summary(endpoints)
-    prompt = build_flow_prompt(flow_template, flow_intent, summary_text)
-
-    client = anthropic.Anthropic(api_key=api_key)
-
-    try:
-        message = client.messages.create(
-            model="claude-sonnet-4-5-20250929",
-            temperature=0.2,
-            max_tokens=6000,
-            messages=[{"role": "user", "content": prompt}]
-        )
-    except Exception as exc:  # pragma: no cover - network / API failure
-        print(f"❌ Flow inference request failed: {exc}")
-        return None
-
-    text_blocks: List[str] = []
-    for block in message.content:
-        if hasattr(block, 'text'):
-            text_blocks.append(block.text)
-        elif isinstance(block, dict) and 'text' in block:
-            text_blocks.append(str(block['text']))
-
-    raw_output = ''.join(text_blocks).strip()
-    cleaned = strip_code_fences(raw_output)
-
-    if not cleaned.strip():
-        return None
-
-    return cleaned.strip()
-
-
-def parse_flow_document(flow_text: str) -> Optional[Dict[str, Any]]:
-    """Parse YAML or JSON flow content into a Python dictionary."""
-    if not flow_text or not flow_text.strip():
-        return None
-
-    if yaml is not None:
-        try:
-            parsed = yaml.safe_load(flow_text)
-            if isinstance(parsed, dict):
-                return parsed
-        except Exception:
-            pass
-
-    try:
-        parsed_json = json.loads(flow_text)
-        if isinstance(parsed_json, dict):
-            return parsed_json
-    except json.JSONDecodeError:
-        return None
-
-    return None
-
-
-def validate_flow_spec(flow_spec: Dict[str, Any]) -> Tuple[bool, str]:
-    """Validate required FlowSpec structure."""
-    if not isinstance(flow_spec, dict):
-        return False, "Flow specification must be a mapping object."
-
-    if flow_spec.get('version') != 1:
-        return False, "FlowSpec version must be 1."
-
-    flow_steps = flow_spec.get('flow')
-    if not isinstance(flow_steps, list) or not flow_steps:
-        return False, "FlowSpec must contain a non-empty 'flow' list."
-
-    seen_ids: Set[str] = set()
-    for idx, step in enumerate(flow_steps):
-        if not isinstance(step, dict):
-            return False, f"Flow step #{idx + 1} must be a mapping."
-
-        step_id = step.get('id')
-        if not step_id:
-            return False, f"Flow step #{idx + 1} is missing an 'id'."
-
-        if step_id in seen_ids:
-            return False, f"Duplicate flow step id detected: {step_id}"
-
-        seen_ids.add(step_id)
-
-        request = step.get('request')
-        if not isinstance(request, dict):
-            return False, f"Flow step '{step_id}' is missing a request definition."
-
-        method = request.get('method')
-        url = request.get('url')
-        if not method or not url:
-            return False, f"Flow step '{step_id}' must define request.method and request.url."
-
-    return True, ''
-
-def enhance_with_claude(captured_data: Dict, api_key: str, instructions: Optional[str] = None) -> str:
-    """
-    Use Claude to enhance and clean captured API traffic before Postman export
-    """
-    client = anthropic.Anthropic(api_key=api_key)
-
-    # Prepare captured requests summary
-    requests_summary = []
-    seen_patterns = set()
-
-    for req in captured_data.get('requests', [])[:100]:
-        # Create a pattern-based key to show unique endpoints to Claude
-        url = req['url']
-        method = req['method']
-        pattern = normalize_url_for_matching(url)
-        pattern_key = f"{method}::{pattern}"
-
-        # Only add unique patterns to summary
-        if pattern_key not in seen_patterns:
-            seen_patterns.add(pattern_key)
-            requests_summary.append({
-                'method': method,
-                'url': url,
-                'status': req['status'],
-                'duration_ms': req.get('duration_ms'),
-            })
-
-    default_instructions = """
-    - Remove ALL duplicate requests (same endpoint called multiple times - keep only ONE)
-    - Remove tracking/analytics requests (Google Analytics, Mixpanel, Segment, Amplitude, Hotjar, Facebook Pixel, etc.)
-    - Remove OPTIONS preflight requests
-    - Remove static asset requests (CSS, JS, images, fonts, etc.)
-    - Remove health check/ping endpoints
-    - Group related endpoints into logical folders
-    - Add clear, human-readable descriptions for each request
-    - Identify and extract common variables (auth tokens, base URLs, IDs)
-    - Clean sensitive data but keep structure
-    - Add example test scenarios where relevant
-    - Suggest meaningful names for each request
-    """
-
-    user_instructions = instructions or default_instructions
-
-    prompt = f"""
-I captured {len(captured_data.get('requests', []))} API requests using a traffic capture tool. 
-I want to create a clean, well-organized Postman collection from this data.
-
-IMPORTANT: Many URLs contain session tokens or IDs in the path. When you see patterns like:
-- /session/AAABBB123... (long tokens)
-- /user/12345 (IDs)
-
-These should be treated as the SAME endpoint and listed only ONCE in enhanced_requests.
-
-Here's a sample of the UNIQUE captured endpoints:
-{json.dumps(requests_summary, indent=2)}
-
-CRITICAL INSTRUCTIONS:
-1. Remove ALL duplicate requests - each unique endpoint should appear ONLY ONCE
-2. Ignore differences in session tokens, user IDs, or other dynamic path parameters
-3. In original_url, you can use {{{{variable_name}}}} placeholders for dynamic parts
-
-Output ONLY valid JSON, no markdown formatting or code blocks.
-
-Use this exact JSON structure:
-{{
-  "recommendations": {{
-    "requests_to_remove": ["pattern1", "pattern2"],
-    "folder_structure": [
-      {{
-        "folder_name": "Authentication",
-        "description": "Login and auth endpoints",
-        "requests": ["url1", "url2"]
-      }}
-    ],
-    "variables": [
-      {{"name": "base_url", "value": "https://api.example.com", "description": "API base URL"}}
-    ]
-  }},
-  "enhanced_requests": [
-    {{
-      "original_url": "https://api.example.com/session/{{{{session_token}}}}",
-      "suggested_name": "Get Session",
-      "description": "Retrieves session information",
-      "folder": "Authentication",
-      "test_variations": ["valid session", "expired session"]
-    }}
-  ]
-}}
-
-Additional instructions:
-{user_instructions}
-
-Remember: Output ONLY the JSON object. Each unique endpoint should appear ONLY ONCE.
-"""
-
-    message = client.messages.create(
-        model="claude-sonnet-4-5-20250929",
-        max_tokens=8000,
-        messages=[{"role": "user", "content": prompt}]
-    )
-
-    return message.content[0].text
-
-
-def remove_duplicates_from_enhanced_requests(enhanced_requests: List[Dict]) -> List[Dict]:
-    """
-    Remove duplicate requests from Claude's enhanced_requests based on URL patterns
-    """
-    seen = set()
-    unique_requests = []
-
-    for req in enhanced_requests:
-        url = req.get('original_url', '')
-        pattern = normalize_url_for_matching(url)
-
-        if pattern not in seen:
-            seen.add(pattern)
-            unique_requests.append(req)
-        else:
-            print(f"  🗑️  Skipping duplicate in Claude's response: {req.get('suggested_name', url)}")
-
-    if len(enhanced_requests) != len(unique_requests):
-        print(f"📊 Deduplicated enhanced_requests: {len(enhanced_requests)} → {len(unique_requests)}")
-
-    return unique_requests
-
-
-def apply_enhancements(captured_data: Dict, enhancements_text: str) -> Optional[Dict]:
-    """
-    Apply Claude's recommendations to the captured data
-    """
-    recommendations = extract_json_from_response(enhancements_text)
-
-    if not recommendations:
-        print("⚠️  Could not parse Claude's recommendations as JSON")
-        print("📄 Here's what Claude returned:")
-        print("-" * 60)
-        print(enhancements_text[:1000])
-        print("-" * 60)
-        return None
-
-    # Remove duplicates from enhanced_requests
-    enhanced_requests = recommendations.get('enhanced_requests', [])
-    enhanced_requests = remove_duplicates_from_enhanced_requests(enhanced_requests)
-    recommendations['enhanced_requests'] = enhanced_requests
-
-    # Filter captured requests
-    filtered_requests = []
-    remove_patterns = recommendations.get('recommendations', {}).get('requests_to_remove', [])
-    seen_patterns = set()
-    options_removed = 0
-    analytics_removed = 0
-    duplicates_removed = 0
-
-    for req in captured_data.get('requests', []):
-        url = req['url']
-        method = req.get('method', 'GET')
-
-        # Create pattern for duplicate detection
-        pattern = normalize_url_for_matching(url)
-        request_key = f"{method}::{pattern}"
-
-        # Check if duplicate
-        if request_key in seen_patterns:
-            duplicates_removed += 1
-            continue
-
-        # Check removal patterns
-        should_remove = False
-        for remove_pattern in remove_patterns:
-            pattern_lower = remove_pattern.lower()
-            url_lower = url.lower()
-            method_lower = method.lower()
-
-            # Remove OPTIONS requests
-            if method_lower == 'options' and 'options' in pattern_lower:
-                should_remove = True
-                options_removed += 1
-                if options_removed <= 3:
-                    print(f"  ❌ Removing OPTIONS: {url[:70]}...")
-                break
-
-            # Remove analytics/tracking (check URL against common patterns)
-            analytics_patterns = [
-                'google-analytics', 'analytics.google', 'googletagmanager',
-                'mixpanel', 'segment.', 'amplitude', 'heap.', 'hotjar',
-                'facebook.com/tr', 'doubleclick', 'tracking', 'telemetry',
-                'metrics', '/collect', '/track', '/beacon', 'pixel'
-            ]
-
-            if any(ap in url_lower for ap in analytics_patterns):
-                should_remove = True
-                analytics_removed += 1
-                if analytics_removed <= 3:
-                    print(f"  ❌ Removing analytics/tracking: {url[:70]}...")
-                break
-
-            # Remove based on other patterns Claude identified
-            # Check if URL contains the pattern
-            if pattern_lower in url_lower and 'duplicate' not in pattern_lower:
-                should_remove = True
-                if analytics_removed + options_removed <= 3:
-                    print(f"  ❌ Removing (matched pattern '{remove_pattern}'): {url[:70]}...")
-                break
-
-        if not should_remove:
-            filtered_requests.append(req)
-            seen_patterns.add(request_key)
-
-    removed_count = len(captured_data.get('requests', [])) - len(filtered_requests)
-    print(f"\n📊 Filtering Summary:")
-    print(f"   - Original requests: {len(captured_data.get('requests', []))}")
-    print(f"   - Duplicates removed: {duplicates_removed}")
-    print(f"   - OPTIONS preflights removed: {options_removed}")
-    print(f"   - Analytics/tracking removed: {analytics_removed}")
-    print(f"   - Unique requests kept: {len(filtered_requests)}")
-    print(f"   - Total removed: {removed_count}")
-
-    return {
-        'filtered_requests': filtered_requests,
-        'recommendations': recommendations
-    }
-
-
-def replace_variables_in_url(url: str, variables: List[Dict]) -> str:
-    """
-    Replace actual values in URL with Postman variable syntax {{variable_name}}
-    """
-    modified_url = url
-
-    # Sort by value length (longest first) to avoid partial replacements
-    sorted_vars = sorted(variables, key=lambda x: len(str(x.get('value', ''))), reverse=True)
-
-    for var in sorted_vars:
-        var_name = var['name']
-        var_value = str(var['value'])
-
-        if var_value and var_value in modified_url:
-            modified_url = modified_url.replace(var_value, f"{{{{{var_name}}}}}")
-
-    return modified_url
-
-
-def expand_variables_in_enhanced_requests(enhanced_requests: List[Dict], variables: List[Dict]) -> List[Dict]:
-    """
-    Expand {{variable}} placeholders in enhanced request URLs with actual values
-    This allows proper matching with captured URLs
-    """
-    var_map = {var['name']: var['value'] for var in variables}
-
-    expanded = []
-    for er in enhanced_requests:
-        er_copy = er.copy()
-        url = er_copy.get('original_url', '')
-
-        # Replace {{variable}} with actual values
-        for var_name, var_value in var_map.items():
-            placeholder = f"{{{{{var_name}}}}}"
-            if placeholder in url:
-                url = url.replace(placeholder, str(var_value))
-
-        er_copy['original_url_expanded'] = url  # Keep expanded version for matching
-        expanded.append(er_copy)
-
-    return expanded
-
-
-def match_enhancement_to_request(req_url: str, enhanced_requests: List[Dict]) -> Optional[Dict]:
-    """
-    Find the best matching enhanced request for a captured request URL
-    Uses pattern matching to handle dynamic IDs/tokens
-    """
-    req_parsed = urlparse(req_url)
-    req_pattern = get_path_pattern(req_url)
-
-    for er in enhanced_requests:
-        # Use expanded URL for matching (with variables replaced)
-        er_url = er.get('original_url_expanded', er.get('original_url', ''))
-        er_parsed = urlparse(er_url)
-        er_pattern = get_path_pattern(er_url)
-
-        # Match if same host and same path pattern
-        if req_parsed.netloc == er_parsed.netloc:
-            # Exact pattern match
-            if req_pattern == er_pattern:
-                return er
-
-            # Fuzzy match: ignore wildcards
-            req_pattern_normalized = req_pattern.replace('/*', '')
-            er_pattern_normalized = er_pattern.replace('/*', '')
-            if req_pattern_normalized == er_pattern_normalized:
-                return er
-
-    return None
-
-
-def debug_matching_issue(filtered_requests: List[Dict], enhanced_requests: List[Dict]):
-    """Debug why requests aren't matching"""
-    print("\n" + "=" * 70)
-    print("🔬 DETAILED MATCHING DEBUG")
-    print("=" * 70 + "\n")
-
-    # Show first filtered request
-    if filtered_requests:
-        req = filtered_requests[0]
-        req_url = req['url']
-        print(f"📥 Sample Filtered Request:")
-        print(f"  URL: {req_url}")
-        print(f"  Pattern: {normalize_url_for_matching(req_url)}")
-        print(f"  Parsed: {urlparse(req_url).netloc} | {get_path_pattern(req_url)}")
-    else:
-        print(f"⚠️  No filtered requests to debug!")
-
-    print()
-
-    # Show first enhanced request
-    if enhanced_requests:
-        er = enhanced_requests[0]
-        er_url = er.get('original_url_expanded', er.get('original_url'))
-        print(f"📤 Sample Enhanced Request:")
-        print(f"  URL (original): {er.get('original_url')}")
-        print(f"  URL (expanded): {er.get('original_url_expanded', '⚠️  NOT EXPANDED!')}")
-        print(f"  Pattern: {normalize_url_for_matching(er_url)}")
-        print(f"  Parsed: {urlparse(er_url).netloc} | {get_path_pattern(er_url)}")
-    else:
-        print(f"⚠️  No enhanced requests to debug!")
-
-    print("\n" + "=" * 70 + "\n")
-
-
-def generate_postman_collection(
-    enhanced_data: Dict,
-    session_name: str,
-    flow_spec: Optional[Dict[str, Any]] = None,
-    flow_strict: bool = False
-) -> Dict:
-    """
-    Generate Postman Collection v2.1 with Claude's enhancements and optional flow ordering.
-    """
-    recommendations = enhanced_data['recommendations']['recommendations']
-    enhanced_requests = enhanced_data['recommendations'].get('enhanced_requests', [])
-    filtered_requests = enhanced_data['filtered_requests']
-    variables = recommendations.get('variables', [])
-
-    flow_map: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
-    flow_usage: Dict[str, Dict[str, Any]] = {}
-
-    if flow_spec:
-        flow_map, flow_usage = build_flow_map(flow_spec, variables)
-        print(f"\n🔁 Applying inferred flow ordering with {len(flow_usage)} steps")
-
-    request_counter = 0
-
-    def annotate_request(postman_request: Dict[str, Any], method: str, original_url: str, url_with_vars: str) -> None:
-        nonlocal request_counter
-        request_counter += 1
-        postman_request['_original_index'] = request_counter
-
-        if not flow_map:
+class AIFlowGenerator:
+    """AI-powered flow generator using Claude to analyze raw logs"""
+
+    def __init__(self, raw_log: List[Dict[str, Any]], flow_intent: str = "", api_key: Optional[str] = None):
+        self.raw_log = raw_log
+        self.flow_intent = flow_intent
+        self.client = None
+        self.ai_available = False
+
+        # Check if anthropic library is available
+        if not ANTHROPIC_AVAILABLE:
+            self.ai_message = "⚠ Claude AI not available: anthropic library not installed\n  Install: pip install anthropic"
             return
 
-        signatures_to_try = [
-            compute_flow_signature(method, original_url),
-        ]
+        # Check for API key (parameter or environment)
+        actual_api_key = api_key or os.environ.get('ANTHROPIC_API_KEY')
+        if not actual_api_key:
+            self.ai_message = "⚠ Claude AI not available: ANTHROPIC_API_KEY not set\n  Set: export ANTHROPIC_API_KEY=your_key_here\n  Or: --api-key your_key\n  Get key: https://console.anthropic.com/"
+            return
 
-        if url_with_vars and url_with_vars != original_url:
-            signatures_to_try.append(compute_flow_signature(method, url_with_vars, variables))
+        # Initialize client
+        try:
+            self.client = anthropic.Anthropic(api_key=actual_api_key)
+            self.ai_available = True
+            self.ai_message = "✓ Claude AI enabled"
+        except Exception as e:
+            self.ai_message = f"⚠ Claude AI initialization failed: {e}"
 
-        seen_signatures = set()
-        for signature in signatures_to_try:
-            if not signature or signature in seen_signatures:
-                continue
-            seen_signatures.add(signature)
+    def save_flow(self, filepath: str) -> None:
+        """Generate and save flow to YAML file"""
+        # Show AI status
+        if hasattr(self, 'ai_message'):
+            print(self.ai_message)
 
-            entry = flow_map.get(signature)
-            if not entry:
-                entry = flow_map.get((signature[0], '', signature[2]))
+        # Use AI if available, otherwise basic generation
+        if self.ai_available and self.client:
+            print("  Using AI-powered flow analysis...")
 
-            if entry:
-                postman_request['_flow_order'] = entry['order']
-                postman_request['_flow_step_id'] = entry['id']
-                usage_entry = flow_usage.get(entry['id'])
-                if usage_entry:
-                    usage_entry['used'] = True
-                break
+            # Show intent keywords for debugging
+            if self.flow_intent:
+                keywords = self._extract_intent_keywords(self.flow_intent)
+                print(f"  Intent keywords: {', '.join(keywords[:15])}")
 
-    # 🔧 DEBUG: Print initial state
-    print(f"\n{'=' * 70}")
-    print(f"🔍 COLLECTION GENERATION DEBUG")
-    print(f"{'=' * 70}\n")
-    print(f"📊 Initial state:")
-    print(f"   - Enhanced requests: {len(enhanced_requests)}")
-    print(f"   - Filtered requests: {len(filtered_requests)}")
-    print(f"   - Variables: {len(variables)}")
+            flow = self.generate_flow_with_ai()
+        else:
+            print("  Using basic flow generation...")
+            flow = self._generate_basic_flow()
 
-    if enhanced_requests:
-        print(f"   - First enhanced URL (BEFORE expansion): {enhanced_requests[0].get('original_url')}")
-    if filtered_requests:
-        print(f"   - First filtered URL: {filtered_requests[0].get('url', 'N/A')[:80]}...")
+        # Create directory if it doesn't exist
+        os.makedirs(os.path.dirname(filepath) if os.path.dirname(filepath) else '.', exist_ok=True)
 
-    # ⭐⭐⭐ CRITICAL FIX: Expand variables in enhanced requests ⭐⭐⭐
-    print(f"\n🔄 Expanding variables in enhanced requests...")
-    enhanced_requests = expand_variables_in_enhanced_requests(enhanced_requests, variables)
+        with open(filepath, 'w') as f:
+            yaml.dump(flow, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
-    # 🔧 DEBUG: After expansion
-    print(f"\n✅ After variable expansion:")
-    if enhanced_requests:
-        print(
-            f"   - First enhanced URL (AFTER expansion): {enhanced_requests[0].get('original_url_expanded', '⚠️  MISSING!')}")
+    def generate_flow_with_ai(self) -> Dict[str, Any]:
+        """Use Claude AI to generate an intelligent flow from raw logs"""
 
-    # Debug matching
-    debug_matching_issue(filtered_requests, enhanced_requests)
+        if not self.ai_available:
+            return self._generate_basic_flow()
 
-    # Build folder structure
-    folders = {}
-    for folder_info in recommendations.get('folder_structure', []):
-        folder_name = folder_info['folder_name']
-        folders[folder_name] = {
-            'name': folder_name,
-            'description': folder_info.get('description', ''),
-            'item': []
-        }
+        try:
+            # Prepare the raw logs for Claude with full details
+            logs_json = self._prepare_logs_for_ai()
 
-    if 'Uncategorized' not in folders:
-        folders['Uncategorized'] = {
-            'name': 'Uncategorized',
-            'description': 'Requests without a specific category',
-            'item': []
-        }
+            # Create the prompt for Claude
+            prompt = self._create_ai_prompt(logs_json)
 
-    # Track added requests to prevent duplicates
-    added_patterns = set()
-    match_count = 0
-    no_match_count = 0
+            # Call Claude API
+            message = self.client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=8192,
+                messages=[{"role": "user", "content": prompt}]
+            )
 
-    # Headers that should be auto-generated and not included
-    skip_headers = {
-        'content-length',
-        'content-encoding',
-        'transfer-encoding',
-        'host',
-        'connection',
-        'keep-alive',
-        'upgrade-insecure-requests',
-        'te'
-    }
+            # Extract YAML from response
+            response_text = message.content[0].text
+            flow_yaml = self._extract_yaml_from_response(response_text)
 
-    # Create a mapping of patterns to captured requests for quick lookup
-    captured_by_pattern = {}
-    for req in filtered_requests:
-        pattern = normalize_url_for_matching(req['url'])
-        method = req.get('method', 'GET')
-        key = f"{method}::{pattern}"
-        if key not in captured_by_pattern:
-            captured_by_pattern[key] = req
+            if flow_yaml:
+                return yaml.safe_load(flow_yaml)
+            else:
+                print("  ⚠ Could not extract YAML from AI response, using basic flow")
+                return self._generate_basic_flow()
 
-    print(f"{'=' * 70}")
-    print(f"🔗 MATCHING REQUESTS (in Claude's organized order)")
-    print(f"{'=' * 70}\n")
+        except Exception as e:
+            print(f"  ⚠ AI generation failed: {e}")
+            print("  Falling back to basic flow generation")
+            return self._generate_basic_flow()
 
-    # Process each enhanced request IN ORDER (this maintains Claude's organization)
-    for idx, enhancement in enumerate(enhanced_requests):
-        # Find the matching captured request
-        er_url = enhancement.get('original_url_expanded', enhancement.get('original_url', ''))
-        er_pattern = normalize_url_for_matching(er_url)
+    def _prepare_logs_for_ai(self) -> str:
+        """Prepare raw logs as JSON for Claude - use smart sampling based on intent"""
 
-        # Try to find captured request - check both GET and POST methods
-        req = None
-        method = None
-        for test_method in ['POST', 'GET', 'PUT', 'DELETE', 'PATCH']:
-            test_key = f"{test_method}::{er_pattern}"
-            if test_key in captured_by_pattern:
-                req = captured_by_pattern[test_key]
-                method = test_method
-                break
+        # Extract keywords from flow intent
+        intent_keywords = self._extract_intent_keywords(self.flow_intent)
 
-        if not req:
-            no_match_count += 1
-            if no_match_count <= 5:
-                print(f"  ❌ NO MATCH #{no_match_count}: {enhancement.get('suggested_name')}")
-                print(f"      → Pattern: {er_pattern}")
-            continue
+        # Step 1: Always include first 50 requests (start of flow)
+        selected_indices = set(range(min(50, len(self.raw_log))))
 
-        original_url = req['url']
-        method = req.get('method', 'GET')
-        pattern = normalize_url_for_matching(original_url)
-        request_id = f"{method}::{pattern}"
+        # Step 2: Search entire log for requests matching intent keywords
+        keyword_matches = 0
+        for idx, entry in enumerate(self.raw_log):
+            url = entry.get('url', '').lower()
+            body = str(entry.get('req_body', '')).lower()
 
-        # Skip if already added
-        if request_id in added_patterns:
-            continue
+            # Check if any intent keyword appears in URL or body
+            for keyword in intent_keywords:
+                if keyword in url or keyword in body:
+                    selected_indices.add(idx)
+                    keyword_matches += 1
+                    # Also include surrounding requests for context
+                    if idx > 0:
+                        selected_indices.add(idx - 1)
+                    if idx < len(self.raw_log) - 1:
+                        selected_indices.add(idx + 1)
+                    break
 
-        match_count += 1
-        if match_count <= 5:  # Show first 5 matches
-            print(f"  ✅ MATCH #{match_count}: {enhancement.get('suggested_name')}")
-            print(f"      → {method} {original_url[:60]}...")
+        # Step 3: Add some samples from middle and end for coverage
+        total = len(self.raw_log)
+        if total > 100:
+            # Add samples from middle
+            mid_start = total // 2 - 10
+            mid_end = total // 2 + 10
+            selected_indices.update(range(max(0, mid_start), min(total, mid_end)))
 
-        # Replace variables in URL
-        url_with_vars = replace_variables_in_url(original_url, variables)
+            # Add last 20 requests
+            selected_indices.update(range(max(0, total - 20), total))
 
-        # Determine folder from enhancement
-        folder_name = enhancement.get('folder', 'Uncategorized')
-        if folder_name not in folders:
-            folders[folder_name] = {'name': folder_name, 'item': []}
+        # Step 4: Limit to 200 requests max to stay within token limits
+        selected_indices = sorted(selected_indices)[:200]
 
-        # Build Postman URL object
-        parsed_vars = urlparse(url_with_vars)
+        # Print sampling statistics
+        match_percentage = (keyword_matches / total * 100) if total > 0 else 0
+        print(f"  Smart sampling: {len(selected_indices)} requests selected from {total} total")
+        print(f"  Keyword matches: {keyword_matches} requests ({match_percentage:.1f}%)")
 
-        postman_url = {
-            'raw': url_with_vars,
-            'protocol': parsed_vars.scheme or 'https',
-            'host': parsed_vars.netloc.split('.') if parsed_vars.netloc else [],
-            'path': [p for p in parsed_vars.path.split('/') if p]
-        }
-
-        # Add query parameters
-        if parsed_vars.query:
-            query_params = parse_qs(parsed_vars.query)
-            postman_url['query'] = []
-            for key, values in query_params.items():
-                for value in values:
-                    value_with_vars = replace_variables_in_url(value, variables)
-                    postman_url['query'].append({
-                        'key': key,
-                        'value': value_with_vars
-                    })
-
-        # Replace variables in headers
-        headers = []
-        for k, v in req.get('req_headers', {}).items():
-            # Skip headers that should be auto-generated
-            if k.lower() in skip_headers:
-                continue
-
-            value_with_vars = replace_variables_in_url(str(v), variables)
-            headers.append({
-                'key': k,
-                'value': value_with_vars,
-                'type': 'text'
+        # Create simplified version for AI
+        simplified = []
+        for idx in selected_indices:
+            entry = self.raw_log[idx]
+            simplified.append({
+                'index': idx + 1,  # 1-based for readability
+                'method': entry.get('method', 'GET'),
+                'url': entry.get('url', ''),
+                'status': entry.get('status', ''),
+                'req_body': entry.get('req_body', '')[:200] if entry.get('req_body') else ''
             })
 
-        # Build Postman request
-        request_name = enhancement.get('suggested_name', f"{method} {er_pattern}")
-        postman_request = {
-            'name': request_name,
-            'request': {
-                'method': method,
-                'header': headers,
-                'url': postman_url
-            },
-            'response': []
-        }
+        return json.dumps(simplified, indent=2)
 
-        # Add body if present
-        if req.get('req_body'):
-            body_with_vars = replace_variables_in_url(req['req_body'], variables)
-            postman_request['request']['body'] = {
-                'mode': 'raw',
-                'raw': body_with_vars,
-                'options': {
-                    'raw': {
-                        'language': 'json'
-                    }
+    def _extract_intent_keywords(self, intent: str) -> List[str]:
+        """Extract keywords from flow intent with minimal filtering"""
+        if not intent:
+            return []
+
+        # Convert to lowercase and split
+        words = intent.lower().split()
+
+        # Only filter out the most basic articles and conjunctions
+        basic_stopwords = {'a', 'an', 'the', 'and', 'or', 'to', 'of', 'in', 'on'}
+
+        # Keep keywords that are at least 3 characters
+        keywords = []
+        for w in words:
+            cleaned = w.strip(',.!?;:')
+            if len(cleaned) >= 3 and cleaned not in basic_stopwords:
+                keywords.append(cleaned)
+
+        # Create compound keywords for consecutive meaningful words
+        compound_keywords = []
+        for i in range(len(words) - 1):
+            word1 = words[i].strip(',.!?;:')
+            word2 = words[i + 1].strip(',.!?;:')
+
+            if (word1 not in basic_stopwords and word2 not in basic_stopwords and
+                    len(word1) >= 3 and len(word2) >= 3):
+                compound = word1 + word2
+                compound_keywords.append(compound)
+
+        return keywords + compound_keywords
+
+    def _create_ai_prompt(self, logs_json: str) -> str:
+        """Create the prompt for Claude AI"""
+        intent_section = ""
+        keywords_section = ""
+
+        if self.flow_intent:
+            intent_section = f"""
+USER'S FLOW INTENT: {self.flow_intent}
+"""
+            # Extract keywords and show them in the prompt
+            intent_keywords = self._extract_intent_keywords(self.flow_intent)
+            if intent_keywords:
+                keywords_section = f"""
+Keywords extracted from intent: {', '.join(intent_keywords[:20])}
+
+IMPORTANT: Before using any intent keyword, verify it actually appears in the log URLs or request bodies.
+Ignore intent keywords that don't match anything in the actual logs (e.g., if intent says "destroys everything" 
+but no URLs contain "destroy", ignore those keywords and focus only on what's actually present in the logs).
+"""
+
+        return dedent(f"""
+        You are analyzing HTTP request logs to create a structured flow YAML file.
+
+        {intent_section}{keywords_section}
+        HTTP Request Logs (Smart Sampled from {len(self.raw_log)} total requests):
+        ```json
+        {logs_json}
+        ```
+
+        CRITICAL INSTRUCTIONS:
+
+        1. **Validate Intent Against Logs**:
+           - Review the URLs and request bodies in the logs
+           - ONLY create flow steps for actions that are ACTUALLY PRESENT in the logs
+           - If intent keywords don't appear in any URLs/paths/bodies, ignore those parts of the intent
+           - Example: If intent says "destroys everything" but no URL contains "destroy", skip it
+           - Example: If intent says "paysafe deposit" and URLs contain "/paysafe/" and "/deposit", use them
+
+        2. **Match Real Actions**:
+           - Identify requests where the URL path, domain, or body clearly relates to the intent
+           - Look for domain-specific terms (payment provider names, action verbs in URLs, API endpoints)
+           - Prefer explicit matches (e.g., URL contains "paysafe", "login", "cashier", "deposit")
+
+        3. **Use Exact URLs**:
+           - Use the EXACT URLs from the logs (including all query parameters)
+           - Include the actual HTTP method from the logs
+           - Use the actual status codes from the logs
+
+        4. **Create Accurate Flow Steps**:
+           - Name steps based on what the URL/endpoint actually does
+           - Only include steps where you can find a clear corresponding request
+           - Order steps by their index position in the logs
+
+        5. **Be Honest**:
+           - If the intent describes actions not present in the logs, only create steps for what IS present
+           - Don't invent steps for intent keywords that have no corresponding requests
+           - Focus on the actual technical flow captured in the logs
+
+        Create a YAML flow file with this structure:
+        ```yaml
+        name: "Flow Name Based on Actual Log Content"
+        description: "Description of what actually happened in the logs"
+        steps:
+          - id: step1
+            name: "Step Name Based on Actual Request"
+            request:
+              method: POST  # Actual method from log
+              url: "https://exact.url.from/log?with=params"  # EXACT URL from log
+            expect:
+              status: 200  # Actual status from log
+            notes:
+              - "What this request actually does"
+        ```
+
+        Generate the YAML flow now, including ONLY steps that have actual corresponding requests in the logs:
+        """).strip()
+
+    def _extract_yaml_from_response(self, response: str) -> Optional[str]:
+        """Extract YAML content from Claude's response"""
+        # Try to find YAML in code blocks
+        yaml_pattern = r'```(?:yaml|yml)?\s*\n(.*?)\n```'
+        matches = re.findall(yaml_pattern, response, re.DOTALL)
+
+        if matches:
+            return matches[0]
+
+        # If no code blocks, try to parse the entire response
+        try:
+            yaml.safe_load(response)
+            return response
+        except:
+            return None
+
+    def _generate_basic_flow(self) -> Dict[str, Any]:
+        """Generate a basic flow without AI"""
+        steps = []
+
+        for idx, entry in enumerate(self.raw_log[:50], 1):  # Limit to first 50
+            method = entry.get('method', 'GET')
+            url = entry.get('url', '')
+            status = entry.get('status')
+
+            if not url:
+                continue
+
+            # Generate simple step name
+            parsed = urlparse(url)
+            path_parts = [p for p in parsed.path.split('/') if p]
+            step_name = path_parts[-1] if path_parts else parsed.netloc
+
+            step = {
+                'id': f'step{idx}',
+                'name': f"{method} {step_name}",
+                'request': {
+                    'method': method,
+                    'url': url
                 }
             }
 
-        # Add description with test variations
-        description_parts = []
-        if enhancement.get('description'):
-            description_parts.append(enhancement['description'])
+            if status:
+                step['expect'] = {'status': status}
 
-        if enhancement.get('test_variations'):
-            description_parts.append("\n\n**Test Variations:**")
-            for variation in enhancement['test_variations']:
-                description_parts.append(f"- {variation}")
+            steps.append(step)
 
-        if description_parts:
-            postman_request['request']['description'] = '\n'.join(description_parts)
+        return {
+            'name': "Generated Flow",
+            'description': f"Auto-generated from {len(self.raw_log)} requests",
+            'steps': steps
+        }
 
-        annotate_request(postman_request, method, original_url, url_with_vars)
-        # Add to folder
-        folders[folder_name]['item'].append(postman_request)
-        added_patterns.add(request_id)
 
-    # Add any remaining unmatched requests to Uncategorized
-    print(f"\n  🔍 Checking for unmatched captured requests...")
-    unmatched_count = 0
-    for req in filtered_requests:
-        original_url = req['url']
-        method = req.get('method', 'GET')
-        pattern = normalize_url_for_matching(original_url)
-        request_id = f"{method}::{pattern}"
+class FlowProcessor:
+    """Processes flow YAML file"""
 
-        if request_id not in added_patterns:
-            unmatched_count += 1
-            if unmatched_count <= 3:
-                print(f"  📝 Adding unmatched to Uncategorized: {method} {original_url[:60]}...")
+    def __init__(self, flow: Dict[str, Any]):
+        self.flow = flow
+        self.flow_steps = flow.get('steps', [])
 
-            # Add to Uncategorized folder
-            url_with_vars = replace_variables_in_url(original_url, variables)
-            parsed_vars = urlparse(url_with_vars)
+    def get_flow_name(self) -> str:
+        return self.flow.get('name', 'API Flow')
 
-            postman_url = {
-                'raw': url_with_vars,
-                'protocol': parsed_vars.scheme or 'https',
-                'host': parsed_vars.netloc.split('.') if parsed_vars.netloc else [],
-                'path': [p for p in parsed_vars.path.split('/') if p]
-            }
+    def get_flow_description(self) -> str:
+        return self.flow.get('description', '')
 
-            if parsed_vars.query:
-                query_params = parse_qs(parsed_vars.query)
-                postman_url['query'] = []
-                for key, values in query_params.items():
-                    for value in values:
-                        value_with_vars = replace_variables_in_url(value, variables)
-                        postman_url['query'].append({
-                            'key': key,
-                            'value': value_with_vars
-                        })
 
-            headers = []
-            for k, v in req.get('req_headers', {}).items():
-                if k.lower() not in skip_headers:
-                    value_with_vars = replace_variables_in_url(str(v), variables)
-                    headers.append({
-                        'key': k,
-                        'value': value_with_vars,
-                        'type': 'text'
-                    })
+class PostmanCollectionBuilder:
+    """Builds Postman collection JSON"""
 
-            postman_request = {
-                'name': f"{method} {pattern}",
-                'request': {
-                    'method': method,
-                    'header': headers,
-                    'url': postman_url
-                },
-                'response': []
-            }
+    def __init__(self, name: str, description: str = ""):
+        self.collection = {
+            "info": {
+                "name": name,
+                "description": description,
+                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+            },
+            "item": []
+        }
 
-            if req.get('req_body'):
-                body_with_vars = replace_variables_in_url(req['req_body'], variables)
-                postman_request['request']['body'] = {
-                    'mode': 'raw',
-                    'raw': body_with_vars,
-                    'options': {
-                        'raw': {
-                            'language': 'json'
-                        }
+    def add_request(self,
+                    name: str,
+                    method: str,
+                    url: str,
+                    headers: Optional[Dict[str, str]] = None,
+                    body: Optional[Any] = None,
+                    notes: Optional[List[str]] = None,
+                    expected_status: Optional[int] = None) -> None:
+        """Add a request to the collection"""
+
+        # Build header array, excluding content-length (Postman calculates it automatically)
+        header_array = []
+        if headers:
+            for key, value in headers.items():
+                # Skip content-length header - Postman calculates it automatically
+                if key.lower() == 'content-length':
+                    continue
+                header_array.append({
+                    "key": key,
+                    "value": str(value),
+                    "type": "text"
+                })
+
+        # Build request body
+        request_body = None
+        if body:
+            if isinstance(body, dict) or isinstance(body, list):
+                request_body = {
+                    "mode": "raw",
+                    "raw": json.dumps(body, indent=2),
+                    "options": {
+                        "raw": {
+                            "language": "json"
                         }
                     }
+                }
+            elif isinstance(body, str):
+                request_body = {
+                    "mode": "raw",
+                    "raw": body
+                }
 
-            annotate_request(postman_request, method, original_url, url_with_vars)
-            folders['Uncategorized']['item'].append(postman_request)
-            added_patterns.add(request_id)
-
-    if unmatched_count > 0:
-        print(f"  📊 Added {unmatched_count} unmatched requests to Uncategorized")
-
-    missing_flow_steps: List[Dict[str, Any]] = []
-    matched_flow_steps_count = 0
-    if flow_map:
-        missing_flow_steps = [info for info in flow_usage.values() if not info.get('used')]
-        matched_flow_steps_count = len(flow_usage) - len(missing_flow_steps)
-
-    # Print match summary
-    print(f"\n{'=' * 70}")
-    print(f"📈 MATCHING SUMMARY")
-    print(f"{'=' * 70}")
-    print(f"  ✅ Matched (organized by Claude): {match_count}")
-    print(f"  📝 Unmatched (added to Uncategorized): {unmatched_count if 'unmatched_count' in locals() else 0}")
-    print(f"  ❌ Enhanced requests without captures: {no_match_count}")
-    print(f"  📁 Total added to collection: {len(added_patterns)}")
-    if flow_map:
-        print(f"  🔁 Flow steps aligned: {matched_flow_steps_count}/{len(flow_usage)}")
-        if missing_flow_steps:
-            print(f"  ⚠️ Flow steps without matches:")
-            for info in missing_flow_steps[:5]:
-                step = info['step']
-                print(f"     - {step.get('id')} ({step.get('name', 'Unnamed step')})")
-            if len(missing_flow_steps) > 5:
-                print(f"     ... and {len(missing_flow_steps) - 5} more")
-    print(f"{'=' * 70}\n")
-
-    if flow_map and flow_strict and missing_flow_steps:
-        raise ValueError("Flow strict mode: some flow steps were not matched to captured requests.")
-
-    # Remove empty folders
-    folders = {k: v for k, v in folders.items() if v['item']}
-
-    ordered_folder_entries: List[Tuple[float, int, Dict[str, Any]]] = []
-    for idx, (folder_name, folder) in enumerate(folders.items()):
-        items = folder['item']
-        if flow_map:
-            items.sort(key=lambda item: (item.get('_flow_order', float('inf')), item.get('_original_index', 0)))
-        else:
-            items.sort(key=lambda item: item.get('_original_index', 0))
-
-        folder_flow_index = min((item.get('_flow_order', float('inf')) for item in items), default=float('inf'))
-
-        for item in items:
-            item.pop('_original_index', None)
-            item.pop('_flow_order', None)
-            item.pop('_flow_step_id', None)
-
-        ordered_folder_entries.append((folder_flow_index, idx, folder))
-
-    if flow_map:
-        ordered_folders = [entry[2] for entry in sorted(ordered_folder_entries, key=lambda x: (x[0], x[1]))]
-    else:
-        ordered_folders = [entry[2] for entry in sorted(ordered_folder_entries, key=lambda x: x[1])]
-
-    # Build final collection
-    collection = {
-        'info': {
-            'name': f"{session_name} (AI Enhanced)",
-            'description': (
-                f"Generated by TraceTap + Claude AI on {datetime.now().isoformat()}\n\n"
-                "**AI-Organized Structure** - Requests ordered logically by Claude\n"
-                "**Noise Removed** - Analytics, tracking, OPTIONS, and duplicates filtered out\n"
-                "**Variables extracted** - Check collection variables below\n"
-                "**Auto-generated headers removed** - Content-Length, Host, etc."
-            ),
-            'schema': 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json'
-        },
-        'item': ordered_folders,
-        'variable': [
-            {
-                'key': var['name'],
-                'value': var.get('value', ''),
-                'type': 'string',
-                'description': var.get('description', '')
+        # Build the request item
+        item = {
+            "name": name,
+            "request": {
+                "method": method.upper(),
+                "header": header_array,
+                "url": {
+                    "raw": url,
+                    "protocol": urlparse(url).scheme,
+                    "host": urlparse(url).netloc.split(':')[0].split('.'),
+                    "path": urlparse(url).path.split('/')[1:],
+                }
             }
-            for var in variables
-        ]
-    }
+        }
 
-    return collection
+        if request_body:
+            item["request"]["body"] = request_body
+
+        # Add notes and expected status as description
+        description_parts = []
+        if notes:
+            description_parts.extend(notes)
+        if expected_status:
+            description_parts.append(f"Expected Status: {expected_status}")
+
+        if description_parts:
+            item["request"]["description"] = "\n".join(description_parts)
+
+        self.collection["item"].append(item)
+
+    def save(self, filepath: str) -> None:
+        """Save collection to file"""
+        with open(filepath, 'w') as f:
+            json.dump(self.collection, f, indent=2)
 
 
-def load_existing_collection(filepath: str) -> Optional[Dict]:
-    """Load existing Postman collection"""
-    try:
-        with open(filepath, 'r') as f:
-            return json.load(f)
-    except FileNotFoundError:
-        print(f"⚠️  Collection file not found: {filepath}")
-        return None
-    except json.JSONDecodeError:
-        print(f"⚠️  Invalid JSON in collection file: {filepath}")
-        return None
+class TraceTapAI:
+    """Main application class"""
+
+    def __init__(self, args):
+        self.args = args
+        self.raw_log = None
+        self.flow = None
+        self.flow_processor = None
+        self.log_processor = None
+
+    def load_raw_log(self) -> None:
+        """Load raw HTTP capture log"""
+        try:
+            with open(self.args.raw_log, 'r') as f:
+                data = json.load(f)
+
+            if not isinstance(data, list):
+                print(f"Error: Raw log must be a JSON array", file=sys.stderr)
+                sys.exit(1)
+
+            # Handle both flat and nested formats
+            # Nested format: [{ "session": "...", "requests": [...] }]
+            # Flat format: [{ "method": "...", "url": "...", ... }]
+            if len(data) > 0 and isinstance(data[0], dict) and 'requests' in data[0]:
+                # Nested format - extract requests
+                print(f"Detected nested format (session wrapper)")
+                self.raw_log = data[0]['requests']
+                session_name = data[0].get('session', 'Unknown Session')
+                print(f"Session: {session_name}")
+                print(f"Loaded {len(self.raw_log)} log entries from {self.args.raw_log}")
+            else:
+                # Flat format - use as-is
+                print(f"Detected flat format")
+                self.raw_log = data
+                print(f"Loaded {len(self.raw_log)} log entries from {self.args.raw_log}")
+
+            if len(self.raw_log) == 0:
+                print(f"Warning: No log entries found in file", file=sys.stderr)
+
+            self.log_processor = RawLogProcessor(self.raw_log)
+
+        except FileNotFoundError:
+            print(f"Error: Raw log file '{self.args.raw_log}' not found", file=sys.stderr)
+            sys.exit(1)
+        except json.JSONDecodeError as e:
+            print(f"Error: Invalid JSON in raw log file: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    def load_flow(self) -> None:
+        """Load or generate flow YAML"""
+        # Determine flow file path
+        if self.args.from_flow:
+            flow_file = self.args.from_flow
+            must_exist = True
+        elif self.args.emit_flow:
+            flow_file = self.args.emit_flow
+            must_exist = False
+        else:
+            return
+
+        # Check if file exists
+        file_exists = os.path.exists(flow_file)
+
+        if not file_exists and must_exist:
+            # For --from-flow mode, flow file is required
+            print(f"Error: Flow file '{flow_file}' not found", file=sys.stderr)
+            sys.exit(1)
+
+        # Check if we should force regeneration
+        should_regenerate = (
+                not file_exists or
+                (hasattr(self.args, 'force_regenerate') and self.args.force_regenerate)
+        )
+
+        if should_regenerate and self.args.infer_flow and self.args.emit_flow:
+            # Generate flow from raw logs using AI
+            if file_exists:
+                print(f"Flow file '{flow_file}' exists, but --force-regenerate specified. Regenerating...")
+            else:
+                print(f"Flow file '{flow_file}' not found, generating from raw logs...")
+
+            if not self.raw_log:
+                print(f"Error: Cannot generate flow without raw log data", file=sys.stderr)
+                sys.exit(1)
+
+            # Generate flow with AI
+            api_key = self.args.api_key if hasattr(self.args, 'api_key') else None
+            flow_generator = AIFlowGenerator(self.raw_log, self.args.flow_intent or "", api_key=api_key)
+            flow_generator.save_flow(flow_file)
+            print(f"✓ Generated flow file: {flow_file}")
+            print(f"  Analyzed: {len(self.raw_log)} requests")
+
+        # Now load the flow file (either existing or newly generated)
+        try:
+            with open(flow_file, 'r') as f:
+                self.flow = yaml.safe_load(f)
+
+            self.flow_processor = FlowProcessor(self.flow)
+            print(f"Loaded flow with {len(self.flow_processor.flow_steps)} steps")
+
+        except FileNotFoundError:
+            if must_exist or self.args.infer_flow:
+                print(f"Error: Flow file '{flow_file}' not found", file=sys.stderr)
+                sys.exit(1)
+            else:
+                print(f"Warning: Flow file '{flow_file}' not found, will process raw log only",
+                      file=sys.stderr)
+                self.args.infer_flow = False
+        except yaml.YAMLError as e:
+            print(f"Error: Invalid YAML in flow file: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    def generate_from_flow(self) -> PostmanCollectionBuilder:
+        """Generate Postman collection from flow YAML"""
+        collection_name = self.flow_processor.get_flow_name()
+        description = self.flow_processor.get_flow_description()
+
+        builder = PostmanCollectionBuilder(collection_name, description)
+
+        used_entries = set()
+        matched_count = 0
+        unmatched_steps = []
+
+        print(f"\nMatching flow steps to log entries (strict={self.args.flow_strict})...")
+
+        for step in self.flow_processor.flow_steps:
+            step_id = step.get('id', 'unknown')
+            step_name = step.get('name', step_id)
+            request = step.get('request', {})
+            expect = step.get('expect', {})
+            notes = step.get('notes', [])
+
+            method = request.get('method', 'GET')
+            url = request.get('url', '')
+            flow_headers = request.get('headers', {})
+            flow_body = request.get('body')
+            expected_status = expect.get('status')
+
+            if not url:
+                print(f"  ⚠ Skipping step '{step_name}': No URL specified")
+                continue
+
+            # Find matching log entry
+            entry = self.log_processor.find_matching_entry(
+                url=url,
+                method=method,
+                strict=self.args.flow_strict,
+                used_entries=used_entries
+            )
+
+            if entry:
+                # Use actual data from log entry
+                actual_headers = entry.get('req_headers', {})
+                actual_body = entry.get('req_body', '')
+
+                # Try to parse body as JSON
+                if actual_body and isinstance(actual_body, str):
+                    try:
+                        actual_body = json.loads(actual_body)
+                    except:
+                        pass
+
+                # Mark this entry as used
+                entry_idx = self.log_processor.log_entries.index(entry)
+                used_entries.add(entry_idx)
+
+                print(f"  ✓ Matched: {step_name}")
+                matched_count += 1
+
+                builder.add_request(
+                    name=step_name,
+                    method=method,
+                    url=url,
+                    headers=actual_headers,
+                    body=actual_body,
+                    notes=notes,
+                    expected_status=expected_status
+                )
+            else:
+                # No match found - use flow definition
+                print(f"  ✗ No match: {step_name} (using flow definition)")
+                unmatched_steps.append(step_name)
+
+                builder.add_request(
+                    name=step_name,
+                    method=method,
+                    url=url,
+                    headers=flow_headers,
+                    body=flow_body,
+                    notes=notes + ["⚠ No matching log entry found - using flow definition"],
+                    expected_status=expected_status
+                )
+
+        print(f"\nMatching Summary:")
+        print(f"  Total steps: {len(self.flow_processor.flow_steps)}")
+        print(f"  Matched: {matched_count}")
+        print(f"  Unmatched: {len(unmatched_steps)}")
+
+        if unmatched_steps:
+            print(f"\nUnmatched steps:")
+            for step in unmatched_steps:
+                print(f"    - {step}")
+
+        return builder
+
+    def generate_from_raw_log(self) -> PostmanCollectionBuilder:
+        """Generate Postman collection directly from raw log"""
+        collection_name = "Raw HTTP Capture"
+        description = f"Captured on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+
+        builder = PostmanCollectionBuilder(collection_name, description)
+
+        print(f"\nProcessing {len(self.raw_log)} log entries...")
+
+        for idx, entry in enumerate(self.raw_log):
+            method = entry.get('method', 'GET')
+            url = entry.get('url', '')
+            headers = entry.get('req_headers', {})
+            body = entry.get('req_body', '')
+            status = entry.get('status')
+
+            if not url:
+                continue
+
+            # Try to parse body as JSON
+            if body and isinstance(body, str):
+                try:
+                    body = json.loads(body)
+                except:
+                    pass
+
+            # Generate name from URL
+            parsed = urlparse(url)
+            path_parts = [p for p in parsed.path.split('/') if p]
+            name = path_parts[-1] if path_parts else parsed.netloc
+            name = f"{idx + 1}. {method} {name}"
+
+            notes = []
+            if status:
+                notes.append(f"Status: {status}")
+
+            builder.add_request(
+                name=name,
+                method=method,
+                url=url,
+                headers=headers,
+                body=body,
+                notes=notes
+            )
+
+        print(f"  ✓ Processed all entries")
+
+        return builder
+
+    def generate_from_flow_only(self) -> PostmanCollectionBuilder:
+        """Generate Postman collection directly from flow YAML (no raw logs)"""
+        collection_name = self.flow_processor.get_flow_name()
+        description = self.flow_processor.get_flow_description()
+
+        builder = PostmanCollectionBuilder(collection_name, description)
+
+        print(f"\nGenerating Postman collection from flow YAML...")
+        print(f"  Mode: Flow-only (no raw logs)")
+        print(f"  Steps: {len(self.flow_processor.flow_steps)}")
+
+        for step in self.flow_processor.flow_steps:
+            step_id = step.get('id', 'unknown')
+            step_name = step.get('name', step_id)
+            request = step.get('request', {})
+            expect = step.get('expect', {})
+            notes = step.get('notes', [])
+
+            method = request.get('method', 'GET')
+            url = request.get('url', '')
+            flow_headers = request.get('headers', {})
+            flow_body = request.get('body')
+            expected_status = expect.get('status')
+
+            if not url:
+                print(f"  ⚠ Skipping step '{step_name}': No URL specified")
+                continue
+
+            print(f"  ✓ Added: {step_name}")
+
+            builder.add_request(
+                name=step_name,
+                method=method,
+                url=url,
+                headers=flow_headers,
+                body=flow_body,
+                notes=notes,
+                expected_status=expected_status
+            )
+
+        print(f"\n✓ Generated {len(builder.collection['item'])} requests from flow definition")
+
+        return builder
+
+    def run(self) -> None:
+        """Main execution flow"""
+        print("TraceTap AI - Postman Collection Generator")
+        print("=" * 50)
+
+        # Determine mode
+        if self.args.from_flow:
+            print("Mode: Generate from Flow YAML only (no raw logs)")
+        elif self.args.match_flow:
+            print("Mode: Match Flow with Raw Logs (STRICT matching)")
+        elif self.args.infer_flow:
+            print(f"Mode: Match Flow with Raw Logs (strict={self.args.flow_strict})")
+        else:
+            print("Mode: Generate from Raw Logs only")
+
+        if hasattr(self.args, 'force_regenerate') and self.args.force_regenerate:
+            print("  ⚠ Force Regenerate: Will regenerate flow even if it exists")
+
+        print()
+
+        # Load raw log (if needed)
+        if not self.args.from_flow:
+            self.load_raw_log()
+
+        # Load flow (if needed)
+        if self.args.infer_flow or self.args.from_flow:
+            self.load_flow()
+
+        # Generate collection based on mode
+        if self.args.from_flow:
+            # Flow-only mode
+            if not self.flow_processor:
+                print("Error: Failed to load flow file", file=sys.stderr)
+                sys.exit(1)
+            builder = self.generate_from_flow_only()
+        elif self.args.infer_flow and self.flow_processor:
+            # Flow matching mode
+            builder = self.generate_from_flow()
+        else:
+            # Raw log only mode
+            builder = self.generate_from_raw_log()
+
+        # Save output
+        output_file = self.args.output
+        builder.save(output_file)
+
+        print(f"\n✓ Postman collection saved to: {output_file}")
+        print(f"  Import this file into Postman to use the collection")
 
 
 def main():
-    import argparse
-
     parser = argparse.ArgumentParser(
-        description='Enhance TraceTap captures with Claude AI'
+        description='Convert raw HTTP captures to Postman collections',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Generate from raw log only
+  python tracetap-ai-postman.py raw_data.json -o output.postman.json
+
+  # Generate with flow matching
+  python tracetap-ai-postman.py raw_data.json \\
+    --infer-flow \\
+    --flow-intent "User login and payment flow" \\
+    --emit-flow flows/payment.yaml \\
+    -o enhanced.postman.json
+
+  # Force regenerate flow even if it exists
+  python tracetap-ai-postman.py raw_data.json \\
+    --infer-flow \\
+    --force-regenerate \\
+    --flow-intent "User login and payment flow" \\
+    --emit-flow flows/payment.yaml \\
+    -o enhanced.postman.json
+
+  # Generate with strict URL matching
+  python tracetap-ai-postman.py raw_data.json \\
+    --infer-flow \\
+    --flow-strict \\
+    --emit-flow flows/payment.yaml \\
+    -o enhanced.postman.json
+
+  # Generate DIRECTLY from flow YAML (no raw logs needed)
+  python tracetap-ai-postman.py \\
+    --from-flow flows/payment.yaml \\
+    -o flow_based.postman.json
+
+  # Match flow with raw logs (STRICT matching by default)
+  python tracetap-ai-postman.py raw_data.json \\
+    --match-flow flows/payment.yaml \\
+    -o matched.postman.json
+        """
     )
-    parser.add_argument('capture_file', help='TraceTap JSON capture file')
-    parser.add_argument('--api-key', help='Claude API key (or set ANTHROPIC_API_KEY)')
-    parser.add_argument('--output', default='enhanced_collection.json', help='Output file')
-    parser.add_argument('--instructions', help='Additional instructions for Claude')
-    parser.add_argument('--save-analysis', help='Save Claude analysis to file')
-    parser.add_argument('--infer-flow', action='store_true', help='Infer a FlowSpec YAML from the capture and flow intent')
-    parser.add_argument('--flow-intent', help='Plain text description of the desired flow order')
-    parser.add_argument('--flow-intent-file', help='File containing the flow intent description')
-    parser.add_argument('--flow-template', help='Optional FlowSpec template YAML to include in the Claude prompt')
-    parser.add_argument('--emit-flow', default='flow.generated.yaml', help='Where to write the generated FlowSpec YAML')
-    parser.add_argument('--max-endpoints', type=int, default=120, help='Maximum unique endpoints summarized for flow inference')
-    parser.add_argument('--flow-strict', action='store_true', help='Require every flow step to match a captured request')
+
+    parser.add_argument('raw_log',
+                        nargs='?',
+                        help='Path to raw HTTP capture log (JSON array)')
+
+    parser.add_argument('--infer-flow',
+                        action='store_true',
+                        help='Use flow YAML to guide collection generation')
+
+    parser.add_argument('--flow-intent',
+                        type=str,
+                        help='Description of the flow intent')
+
+    parser.add_argument('--flow-strict',
+                        action='store_true',
+                        help='Use strict URL matching (include query parameters)')
+
+    parser.add_argument('--emit-flow',
+                        type=str,
+                        help='Path to flow YAML file')
+
+    parser.add_argument('--force-regenerate',
+                        action='store_true',
+                        help='Force regenerate flow file even if it already exists (uses Claude AI)')
+
+    parser.add_argument('--from-flow',
+                        type=str,
+                        help='Generate Postman collection directly from flow YAML (no raw logs required)')
+
+    parser.add_argument('--match-flow',
+                        type=str,
+                        help='Match flow YAML with raw logs and generate Postman collection (strict matching by default)')
+
+    parser.add_argument('--api-key',
+                        type=str,
+                        help='Anthropic API key for AI-powered flow generation (or set ANTHROPIC_API_KEY env var)')
+
+    parser.add_argument('-o', '--output',
+                        type=str,
+                        default='output.postman.json',
+                        help='Output Postman collection file (default: output.postman.json)')
 
     args = parser.parse_args()
 
-    # Get API key
-    api_key = args.api_key or os.environ.get('ANTHROPIC_API_KEY')
-    if not api_key:
-        print("❌ Error: Claude API key required")
-        print("Set via --api-key or ANTHROPIC_API_KEY environment variable")
-        print("Get your key at: https://console.anthropic.com/")
-        return
+    # Validate arguments
+    if args.from_flow:
+        # Flow-only mode: no raw log needed
+        if args.raw_log:
+            parser.error("--from-flow mode does not use raw_log argument")
+        if args.infer_flow:
+            parser.error("--from-flow mode does not use --infer-flow (it's implied)")
+        if args.match_flow:
+            parser.error("Cannot use both --from-flow and --match-flow")
+    elif args.match_flow:
+        # Match flow mode: raw log required, strict by default
+        if not args.raw_log:
+            parser.error("--match-flow requires raw_log argument")
+        if args.infer_flow:
+            parser.error("--match-flow mode does not use --infer-flow (it's implied)")
+        if args.emit_flow:
+            parser.error("--match-flow mode uses --match-flow to specify the flow file, not --emit-flow")
+        # Force strict mode for match-flow
+        args.flow_strict = True
+        args.infer_flow = True
+        args.emit_flow = args.match_flow
+    else:
+        # Normal mode: raw log required
+        if not args.raw_log:
+            parser.error("raw_log is required unless using --from-flow mode")
+        if args.infer_flow and not args.emit_flow:
+            parser.error("--infer-flow requires --emit-flow to specify the flow file")
 
-    # Load captured data
-    print(f"📂 Loading TraceTap capture from {args.capture_file}...")
-    with open(args.capture_file, 'r') as f:
-        captured_data = json.load(f)
+    # Force regenerate requires infer-flow
+    if args.force_regenerate and not args.infer_flow and not args.match_flow:
+        parser.error("--force-regenerate requires --infer-flow or --match-flow")
 
-    print(f"📊 Found {len(captured_data.get('requests', []))} captured requests")
-
-    flow_spec_data: Optional[Dict[str, Any]] = None
-    flow_emit_path: Optional[Path] = None
-    infer_flow_enabled = args.infer_flow
-
-    if infer_flow_enabled:
-        flow_emit_path = Path(args.emit_flow)
-        flow_intent_parts: List[str] = []
-
-        if args.flow_intent:
-            flow_intent_parts.append(args.flow_intent.strip())
-
-        if args.flow_intent_file:
-            try:
-                flow_intent_file_text = Path(args.flow_intent_file).read_text()
-                flow_intent_parts.append(flow_intent_file_text.strip())
-            except OSError as exc:
-                print(f"❌ Failed to read flow intent file {args.flow_intent_file}: {exc}")
-                if args.flow_strict:
-                    return
-                print("⚠️  Skipping flow inference due to missing intent file.")
-                infer_flow_enabled = False
-
-        flow_intent_text = '\n'.join(part for part in flow_intent_parts if part).strip()
-
-        if infer_flow_enabled and not flow_intent_text:
-            print("❌ Flow intent is required when using --infer-flow. Provide --flow-intent or --flow-intent-file.")
-            if args.flow_strict:
-                return
-            print("⚠️  Continuing without inferred flow.")
-            infer_flow_enabled = False
-
-        flow_template_text = DEFAULT_FLOW_TEMPLATE
-        if infer_flow_enabled and args.flow_template:
-            try:
-                flow_template_text = Path(args.flow_template).read_text()
-            except OSError as exc:
-                print(f"⚠️  Could not read flow template {args.flow_template}: {exc}")
-                if args.flow_strict:
-                    return
-                print("⚠️  Falling back to built-in FlowSpec template.")
-                flow_template_text = DEFAULT_FLOW_TEMPLATE
-
-        if infer_flow_enabled:
-            print("🧠 Inferring flow specification with Claude...")
-            flow_yaml_text = infer_flow_yaml(
-                captured_data,
-                api_key,
-                flow_intent_text,
-                flow_template_text,
-                args.max_endpoints,
-            )
-
-            # Persist raw output regardless of validity
-            try:
-                flow_emit_path.parent.mkdir(parents=True, exist_ok=True)
-            except OSError:
-                pass
-
-            flow_yaml_to_save = flow_yaml_text or ''
-
-            try:
-                flow_emit_path.write_text(flow_yaml_to_save)
-                print(f"💾 Wrote FlowSpec draft to {flow_emit_path}")
-            except OSError as exc:
-                print(f"❌ Could not write FlowSpec file {flow_emit_path}: {exc}")
-                if args.flow_strict:
-                    return
-
-            if not flow_yaml_text:
-                print("⚠️  Claude did not return FlowSpec content. Please edit the generated file manually.")
-            else:
-                flow_spec_candidate = parse_flow_document(flow_yaml_text)
-                if flow_spec_candidate is None:
-                    print("❌ Could not parse Claude's FlowSpec output.")
-                    print(f"   → Please review and fix {flow_emit_path} manually.")
-                    if args.flow_strict:
-                        return
-                else:
-                    valid, error = validate_flow_spec(flow_spec_candidate)
-                    if not valid:
-                        print(f"❌ FlowSpec validation failed: {error}")
-                        print(f"   → Please review and fix {flow_emit_path} manually.")
-                        if args.flow_strict:
-                            return
-                    else:
-                        flow_spec_data = flow_spec_candidate
-                        print(f"✅ FlowSpec validated with {len(flow_spec_candidate.get('flow', []))} steps")
-
-    if args.flow_strict and flow_spec_data is None:
-        target_path = flow_emit_path or Path(args.emit_flow)
-        print("❌ Flow strict mode requires a valid FlowSpec. Please review the generated file and try again.")
-        print(f"   → Expected FlowSpec at: {target_path}")
-        return
-
-    # Enhance with Claude
-    print("🤖 Analyzing with Claude AI...")
-    enhancements = enhance_with_claude(captured_data, api_key, args.instructions)
-
-    # Save analysis
-    if args.save_analysis:
-        with open(args.save_analysis, 'w') as f:
-            f.write(enhancements)
-        print(f"💾 Saved Claude's analysis to {args.save_analysis}")
-
-    # Apply enhancements
-    print("✨ Applying enhancements...")
-    enhanced_data = apply_enhancements(captured_data, enhancements)
-
-    if not enhanced_data:
-        print("\n⚠️  Could not apply enhancements")
-        print(f"💡 Check {args.save_analysis or 'output above'} for details")
-        return
-
-    # Generate collection
-    print("📝 Generating enhanced Postman collection...")
-    session_name = captured_data.get('session', 'TraceTap Session')
     try:
-        collection = generate_postman_collection(
-            enhanced_data,
-            session_name,
-            flow_spec=flow_spec_data,
-            flow_strict=args.flow_strict,
-        )
-    except ValueError as exc:
-        print(f"❌ {exc}")
-        if flow_emit_path or args.emit_flow:
-            print(f"   → Update the flow definition at {flow_emit_path or Path(args.emit_flow)} and rerun.")
-        return
-
-    # Save collection
-    with open(args.output, 'w') as f:
-        json.dump(collection, f, indent=2)
-
-    # Print summary
-    variables = enhanced_data['recommendations']['recommendations'].get('variables', [])
-    total_items = sum(len(folder['item']) for folder in collection.get('item', []))
-
-    print(f"\n{'=' * 70}")
-    print(f"✅ SUCCESS!")
-    print(f"{'=' * 70}\n")
-    print(f"Enhanced Postman collection saved to: {args.output}")
-    print(f"\n📌 Summary:")
-    print(f"   - Original requests: {len(captured_data.get('requests', []))}")
-    print(f"   - Filtered requests: {len(enhanced_data['filtered_requests'])}")
-    print(f"   - Unique endpoints in collection: {total_items}")
-    print(f"   - Folders: {len(collection.get('item', []))}")
-    print(f"   - Variables: {len(variables)}")
-    if args.infer_flow:
-        flow_steps = flow_spec_data.get('flow', []) if flow_spec_data else []
-        print(f"   - Flow steps inferred: {len(flow_steps)}")
-        print(f"   - Flow YAML: {flow_emit_path or Path(args.emit_flow)}")
-
-    if variables:
-        print(f"\n🔧 Collection Variables:")
-        for var in variables[:5]:
-            print(f"   - {{{{{var['name']}}}}}: {var.get('description', '')}")
-        if len(variables) > 5:
-            print(f"   ... and {len(variables) - 5} more")
-
-    print(f"\n🚀 Next steps:")
-    print(f"   1. Import {args.output} into Postman")
-    print(f"   2. Check collection variables")
-    print(f"   3. Update variable values as needed")
-    print(f"   4. Start testing your API!")
-    print(f"\n💡 Noise removal:")
-    print(f"   ✅ Duplicates removed")
-    print(f"   ✅ OPTIONS preflights removed")
-    print(f"   ✅ Analytics/tracking removed")
-    print(f"   ✅ Auto-generated headers removed (content-length, host, etc.)")
-    print(f"\n{'=' * 70}\n")
+        app = TraceTapAI(args)
+        app.run()
+    except KeyboardInterrupt:
+        print("\n\nOperation cancelled by user")
+        sys.exit(1)
+    except Exception as e:
+        print(f"\n❌ Error: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
 
 if __name__ == '__main__':
