@@ -198,8 +198,7 @@ def build_all_executables() -> bool:
     # Note: tracetap2wiremock is NOT built as an executable to avoid GLIBC
     # compatibility issues on Linux. It's distributed as a Python script instead.
     builds = [
-        ('tracetap.py', 'tracetap'),
-        # ('tracetap2wiremock.py', 'tracetap2wiremock'),  # Ship as .py script
+        ('tracetap_main.py', 'tracetap'),
     ]
 
     results = []
@@ -268,7 +267,7 @@ def clean_build_files() -> None:
 
     # Remove spec files
     for pattern in files_to_remove:
-        for file_path in Path('.').glob(pattern):
+        for file_path in Path('../../..').glob(pattern):
             file_path.unlink()
             info(f"  Removed file: {file_path}")
 

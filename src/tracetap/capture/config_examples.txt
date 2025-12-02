@@ -1,0 +1,157 @@
+# TraceTap Configuration Examples
+# 
+# This file shows example configurations for common use cases.
+# Copy the desired command and modify for your needs.
+
+# ============================================================================
+# BASIC USAGE
+# ============================================================================
+
+# Start proxy without any export (just monitor traffic)
+python3 tracetap_main.py --listen 8080
+
+# Export to Postman collection
+python3 tracetap_main.py --listen 8080 --export api_captures.json
+
+# Export to raw JSON log
+python3 tracetap_main.py --listen 8080 --raw-log traffic_log.json
+
+# Export both formats
+python3 tracetap_main.py --listen 8080 --export api.json --raw-log raw.json
+
+
+# ============================================================================
+# FILTERING BY HOST
+# ============================================================================
+
+# Capture only a specific API
+python3 tracetap_main.py --listen 8080 \
+  --export github_api.json \
+  --filter-host "api.github.com"
+
+# Capture multiple specific hosts
+python3 tracetap_main.py --listen 8080 \
+  --export apis.json \
+  --filter-host "api.github.com,api.stripe.com,api.twitter.com"
+
+# Capture all subdomains of a domain (wildcard)
+python3 tracetap_main.py --listen 8080 \
+  --export example_apis.json \
+  --filter-host "*.example.com"
+
+# Mix exact and wildcard hosts
+python3 tracetap_main.py --listen 8080 \
+  --export mixed.json \
+  --filter-host "api.github.com,*.example.com,*.googleapis.com"
+
+
+# ============================================================================
+# FILTERING BY REGEX
+# ============================================================================
+
+# Capture only API endpoints (URLs containing "/api/")
+python3 tracetap_main.py --listen 8080 \
+  --export api_only.json \
+  --filter-regex "/api/"
+
+# Capture specific API versions
+python3 tracetap_main.py --listen 8080 \
+  --export v2_api.json \
+  --filter-regex "/api/v2/"
+
+# Capture all .com APIs
+python3 tracetap_main.py --listen 8080 \
+  --export com_apis.json \
+  --filter-regex "api\..*\.com"
+
+# Capture GraphQL endpoints
+python3 tracetap_main.py --listen 8080 \
+  --export graphql.json \
+  --filter-regex "/graphql"
+
+
+# ============================================================================
+# COMBINED FILTERS (OR logic)
+# ============================================================================
+
+# Capture GitHub API or any URL with "auth" in it
+python3 tracetap_main.py --listen 8080 \
+  --export github_and_auth.json \
+  --filter-host "api.github.com" \
+  --filter-regex "auth"
+
+# Capture specific domain OR specific path pattern
+python3 tracetap_main.py --listen 8080 \
+  --export combined.json \
+  --filter-host "*.example.com" \
+  --filter-regex "/api/v[0-9]+"
+
+
+# ============================================================================
+# OUTPUT CONTROL
+# ============================================================================
+
+# Quiet mode (minimal console output)
+python3 tracetap_main.py --listen 8080 --quiet --export api.json
+
+# Verbose mode (show filtering decisions)
+python3 tracetap_main.py --listen 8080 --verbose \
+  --filter-host "api.example.com" \
+  --export api.json
+
+# Custom session name
+python3 tracetap_main.py --listen 8080 \
+  --export api.json \
+  --session "Production API Testing - 2025-10-27"
+
+
+# ============================================================================
+# TESTING SCENARIOS
+# ============================================================================
+
+# Testing a mobile app API
+python3 tracetap_main.py --listen 8080 \
+  --export mobile_app_api.json \
+  --session "Mobile App v2.1 - iOS" \
+  --filter-host "*.myapp.com"
+
+# Testing third-party integrations
+python3 tracetap_main.py --listen 8080 \
+  --export integrations.json \
+  --session "Third-party APIs" \
+  --filter-host "api.stripe.com,api.twilio.com,api.sendgrid.com"
+
+# Debugging authentication flows
+python3 tracetap_main.py --listen 8080 \
+  --export auth_flow.json \
+  --session "Auth Debugging" \
+  --filter-regex "auth|login|token|oauth" \
+  --verbose
+
+# Capturing microservices traffic
+python3 tracetap_main.py --listen 8080 \
+  --export microservices.json \
+  --session "Microservices Communication" \
+  --filter-host "*.internal.company.com"
+
+
+# ============================================================================
+# ADVANCED USE CASES
+# ============================================================================
+
+# Capture everything for analysis
+python3 tracetap_main.py --listen 8080 \
+  --raw-log full_capture.json \
+  --session "Full Traffic Analysis"
+
+# Create API documentation from real traffic
+python3 tracetap_main.py --listen 8080 \
+  --export api_documentation.json \
+  --session "API Documentation - $(date +%Y-%m-%d)" \
+  --filter-regex "/api/"
+
+# Performance testing
+python3 tracetap_main.py --listen 8080 \
+  --raw-log perf_test.json \
+  --session "Performance Test - Load Test #1" \
+  --quiet

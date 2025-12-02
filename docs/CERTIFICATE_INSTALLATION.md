@@ -1,103 +1,232 @@
 # Certificate Installation Guide
 
-To use TraceTap with HTTPS traffic, you need to install the mitmproxy CA certificate so your browser trusts it. Use the appropriate script for your operating system.
+To use TraceTap with HTTPS traffic, you need to install the mitmproxy CA certificate so your browser and applications trust it.
+
+TraceTap now uses a **simplified, unified certificate installer** that's more reliable and provides better error messages than previous versions.
+
+## 🚀 Quick Start
+
+### Prerequisites
+- Python 3 (required for running TraceTap)
+- mitmproxy certificate generated (automatically created when you first run TraceTap)
+
+### Generate Certificate (First Time)
+The certificate is automatically generated when you run TraceTap for the first time:
+```bash
+python tracetap.py --listen 8080
+# Press Ctrl+C after a few seconds - certificate is now generated
+```
+
+### Install Certificate
+
+**All platforms support both methods:**
+
+#### Method 1: Direct Python Installation (Recommended)
+```bash
+# Navigate to the scripts directory
+cd src/tracetap/scripts
+
+# Install certificate
+python3 cert_manager.py install
+
+# Verify installation
+python3 cert_manager.py verify
+
+# Check certificate info
+python3 cert_manager.py info
+```
+
+#### Method 2: Platform-Specific Scripts (Backwards Compatible)
+```bash
+# Linux
+./chrome-cert-manager.sh install
+
+# macOS
+./macos-cert-manager.sh install
+
+# Windows (PowerShell)
+powershell -ExecutionPolicy Bypass .\windows-cert-manager.ps1 install
+```
+
+---
 
 ## 🐧 Linux
 
-### Requirements
-- `libnss3-tools` (auto-installed by script)
-
-### Installation
-
+### Automatic Installation
 ```bash
-# Make script executable
-chmod +x chrome-cert-manager.sh
-
-# Install certificate
-./chrome-cert-manager.sh install
-
-# Follow prompts:
-# - Chrome/Chromium: Yes (automatic)
-# - System-wide: Optional (recommended for curl/CLI tools)
-# - Firefox: Optional
+cd src/tracetap/scripts
+python3 cert_manager.py install
 ```
 
-### Usage
+**What it does:**
+- Installs certificate to system-wide trust store (requires sudo)
+- Works with Chrome, Chromium, Curl, and all system apps
+- Automatically detects your Linux distribution (Debian/Ubuntu, RHEL/Fedora, Arch)
+- Uses appropriate update command for your distro
 
+### Manual Installation
+If automatic installation fails:
+
+**Debian/Ubuntu:**
 ```bash
-# Check status
+sudo cp ~/.mitmproxy/mitmproxy-ca-cert.pem /usr/local/share/ca-certificates/mitmproxy.crt
+sudo update-ca-certificates
+```
+
+**RHEL/Fedora/CentOS:**
+```bash
+sudo cp ~/.mitmproxy/mitmproxy-ca-cert.pem /etc/pki/ca-trust/source/anchors/mitmproxy.pem
+sudo update-ca-trust
+```
+
+**Arch Linux:**
+```bash
+sudo cp ~/.mitmproxy/mitmproxy-ca-cert.pem /etc/ca-certificates/trust-source/anchors/mitmproxy.pem
+sudo trust extract-compat
+```
+
+### Firefox on Linux
+Firefox uses its own certificate store. For Firefox support:
+```bash
+# Install NSS tools
+sudo apt-get install libnss3-tools  # Debian/Ubuntu
+sudo dnf install nss-tools          # Fedora
+sudo pacman -S nss                  # Arch
+
+# Add certificate to Firefox
+certutil -A -d sql:$HOME/.mozilla/firefox/*.default* \
+  -t "C,," -n "mitmproxy" -i ~/.mitmproxy/mitmproxy-ca-cert.pem
+```
+
+### Verification
+```bash
+python3 cert_manager.py verify
+# or
 ./chrome-cert-manager.sh status
-
-# Verify HTTPS works
-./chrome-cert-manager.sh verify
-
-# Remove certificate
-./chrome-cert-manager.sh remove
 ```
 
-### Supported Browsers
-- ✅ Chrome
-- ✅ Chromium
-- ✅ Firefox (optional, requires certutil)
-- ✅ All Chromium-based browsers (Brave, Vivaldi, etc.)
+---
+
+## 🍎 macOS
+
+### Automatic Installation
+```bash
+cd src/tracetap/scripts
+python3 cert_manager.py install
+```
+
+**What it does:**
+- Adds certificate to macOS login keychain
+- Sets trust to "Always Trust"
+- You will be prompted for your password
+- Works with Safari, Chrome, and all macOS apps
+
+### Manual Installation
+If automatic installation fails:
+
+#### Option 1: Command Line
+```bash
+security add-trusted-cert -d -r trustRoot \
+  -k ~/Library/Keychains/login.keychain-db \
+  ~/.mitmproxy/mitmproxy-ca-cert.pem
+```
+
+#### Option 2: Keychain Access (GUI)
+1. Open **Keychain Access** (⌘+Space, type "Keychain")
+2. Select **login** keychain in left sidebar
+3. Drag and drop `~/.mitmproxy/mitmproxy-ca-cert.pem` to the keychain
+4. Double-click the imported certificate
+5. Expand **Trust** section
+6. Set "When using this certificate" to **Always Trust**
+7. Close window and enter your password
+
+### Firefox on macOS
+Firefox requires additional setup:
+```bash
+# Install NSS tools
+brew install nss
+
+# Add certificate to Firefox
+certutil -A -d sql:$HOME/Library/Application\ Support/Firefox/Profiles/*.default* \
+  -t "C,," -n "mitmproxy" -i ~/.mitmproxy/mitmproxy-ca-cert.pem
+```
+
+### Verification
+```bash
+python3 cert_manager.py verify
+# or
+./macos-cert-manager.sh status
+```
 
 ---
 
 ## 🪟 Windows
 
-### Requirements
-- PowerShell (built-in)
-- Administrator rights (optional, for system-wide install)
-
-### Installation
-
+### Automatic Installation
 ```powershell
-# Run PowerShell as regular user (recommended)
-# Or as Administrator for system-wide installation
-
-# Install certificate
-powershell -ExecutionPolicy Bypass .\windows-cert-manager.ps1 install
-
-# Follow prompts:
-# - Firefox: Optional
+cd src\tracetap\scripts
+python cert_manager.py install
 ```
 
-### Usage
+**What it does:**
+- Installs certificate to Current User trust store (no admin required)
+- Uses PowerShell's built-in certificate handling (reliable)
+- Works with Chrome, Edge, and all Windows apps
+- For system-wide trust, run PowerShell as Administrator
 
+### Manual Installation
+If automatic installation fails:
+
+#### Option 1: PowerShell
 ```powershell
-# Check status
+$cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2("$env:USERPROFILE\.mitmproxy\mitmproxy-ca-cert.pem")
+$store = New-Object System.Security.Cryptography.X509Certificates.X509Store("Root", "CurrentUser")
+$store.Open("ReadWrite")
+$store.Add($cert)
+$store.Close()
+```
+
+#### Option 2: GUI
+1. Double-click certificate file: `%USERPROFILE%\.mitmproxy\mitmproxy-ca-cert.pem`
+2. Click **Install Certificate**
+3. Select **Current User**
+4. Select **Place all certificates in the following store**
+5. Click **Browse** → Select **Trusted Root Certification Authorities**
+6. Click **Next** → **Finish**
+7. Click **Yes** on security warning
+
+### Firefox on Windows
+Firefox requires additional setup. **Note:** The old script had a bug in the Firefox path - this is now fixed.
+```powershell
+# Download certutil from Mozilla
+# Install certificate to Firefox profiles manually
+```
+
+### Verification
+```powershell
+python cert_manager.py verify
+# or
 powershell -ExecutionPolicy Bypass .\windows-cert-manager.ps1 status
-
-# Remove certificate
-powershell -ExecutionPolicy Bypass .\windows-cert-manager.ps1 remove
 ```
-
-### Supported Browsers
-- ✅ Chrome
-- ✅ Edge
-- ✅ Internet Explorer
-- ✅ All Windows applications
-- ✅ Firefox (optional, requires NSS certutil)
 
 ---
 
 ## 📋 Complete Workflow
 
-### 1. Install Certificate (One-time)
+### 1. Generate Certificate (First Time)
+
+Run TraceTap once to generate the certificate:
+```bash
+python tracetap.py --listen 8080
+# Wait 5 seconds, then press Ctrl+C
+```
+
+### 2. Install Certificate
 
 **Linux:**
 ```bash
-./chrome-cert-manager.sh install
-```
-
-**macOS:**
-```bash
-./macos-cert-manager.sh install
-```
-
-**Windows:**
-```powershell
-powershell -ExecutionPolicy Bypass .\windows-cert-manager.ps1 install
+cd src/tracetap/scripts
+python3 cert_manager.py install
 ```
 
 ### 2. Restart Browsers
@@ -159,21 +288,25 @@ Visit any HTTPS site (e.g., `https://httpbin.org/get`)
 
 ### Certificate Warnings Still Appear
 
-**Linux:**
+**All Platforms:**
 ```bash
-# Check certificate status
-./chrome-cert-manager.sh status
+cd src/tracetap/scripts
 
-# Reinstall
-./chrome-cert-manager.sh remove
-./chrome-cert-manager.sh install
+# Check certificate status
+python3 cert_manager.py verify
+
+# View certificate info
+python3 cert_manager.py info
+
+# Reinstall if needed
+python3 cert_manager.py uninstall
+python3 cert_manager.py install
 ```
+
+**Platform-Specific Verification:**
 
 **macOS:**
 ```bash
-# Check status
-./macos-cert-manager.sh status
-
 # Verify Keychain trust
 open ~/Library/Keychains/login.keychain-db
 # Search for "mitmproxy" and ensure it's trusted
@@ -181,9 +314,6 @@ open ~/Library/Keychains/login.keychain-db
 
 **Windows:**
 ```powershell
-# Check status
-powershell -ExecutionPolicy Bypass .\windows-cert-manager.ps1 status
-
 # Open Certificate Manager manually
 certmgr.msc
 # Navigate to: Trusted Root Certification Authorities → Certificates
@@ -423,41 +553,4 @@ After installation, verify everything works:
 
 **All green?** You're ready to capture traffic! 🎉
 
-**Still having issues?** Check the troubleshooting section above or open an issue on GitHub.
-
-## 🍎 macOS
-
-### Requirements
-- macOS Keychain (built-in)
-- Optional: `nss` for Firefox (`brew install nss`)
-
-### Installation
-
-```bash
-# Make script executable
-chmod +x macos-cert-manager.sh
-
-# Install certificate
-./macos-cert-manager.sh install
-
-# You'll be prompted for your password to modify Keychain
-```
-
-### Usage
-
-```bash
-# Check status
-./macos-cert-manager.sh status
-
-# Remove certificate
-./macos-cert-manager.sh remove
-```
-
-### Supported Browsers
-- ✅ Safari
-- ✅ Chrome
-- ✅ Edge
-- ✅ All system browsers
-- ✅ Firefox (optional, requires certutil)
-
----
+**Still having issues?** See [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) or open an issue on GitHub.

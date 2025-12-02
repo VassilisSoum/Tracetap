@@ -56,24 +56,33 @@ pip install anthropic
 
 ### 1. Install HTTPS Certificate
 
-Before capturing HTTPS traffic, install TraceTap's certificate:
+Before capturing HTTPS traffic, install TraceTap's certificate.
 
-**Linux:**
+**Recommended Method (All Platforms):**
 ```bash
-chmod +x scripts/chrome-cert-manager.sh
-./scripts/chrome-cert-manager.sh install
+# Navigate to scripts directory
+cd src/tracetap/scripts
+
+# Install certificate
+python3 cert_manager.py install
+
+# Verify installation
+python3 cert_manager.py verify
 ```
 
-**macOS:**
+**Alternative: Platform-Specific Scripts**
 ```bash
-chmod +x scripts/macos-cert-manager.sh
-./scripts/macos-cert-manager.sh install
+# Linux
+./src/tracetap/scripts/chrome-cert-manager.sh install
+
+# macOS
+./src/tracetap/scripts/macos-cert-manager.sh install
+
+# Windows (PowerShell)
+powershell -ExecutionPolicy Bypass .\src\tracetap\scripts\windows-cert-manager.ps1 install
 ```
 
-**Windows:**
-```powershell
-powershell -ExecutionPolicy Bypass .\scripts\windows-cert-manager.ps1 install
-```
+> **Note:** See [CERTIFICATE_INSTALLATION.md](./CERTIFICATE_INSTALLATION.md) for detailed instructions and troubleshooting.
 
 ### 2. Start Capturing Traffic
 
@@ -234,69 +243,79 @@ Options:
 
 ### Why Do I Need a Certificate?
 
-To intercept HTTPS traffic, TraceTap acts as a "man-in-the-middle" proxy. It needs to decrypt HTTPS traffic, which requires installing a trusted certificate.
+To intercept HTTPS traffic, TraceTap acts as a "man-in-the-middle" proxy. It needs to decrypt HTTPS traffic, which requires installing a trusted certificate on your system.
 
-### Automatic Installation
+### Quick Installation (All Platforms)
 
-#### Linux (Chrome/Chromium)
-
-```bash
-# Install
-./scripts/chrome-cert-manager.sh install
-
-# Check status
-./scripts/chrome-cert-manager.sh status
-
-# Remove
-./scripts/chrome-cert-manager.sh remove
-```
-
-#### macOS
+TraceTap now uses a simplified, unified certificate installer:
 
 ```bash
-# Install
-./scripts/macos-cert-manager.sh install
+# Navigate to scripts directory
+cd src/tracetap/scripts
 
-# Check status
-./scripts/macos-cert-manager.sh status
+# Install certificate
+python3 cert_manager.py install
 
-# Remove
-./scripts/macos-cert-manager.sh remove
+# Verify installation
+python3 cert_manager.py verify
+
+# Check certificate info
+python3 cert_manager.py info
+
+# Remove certificate (when done)
+python3 cert_manager.py uninstall
 ```
 
-#### Windows
+**What it does:**
+- Automatically detects your platform (Linux, macOS, Windows)
+- Installs certificate to the appropriate trust store
+- Provides clear error messages if something goes wrong
+- Offers manual installation instructions as fallback
 
-```powershell
-# Install
-powershell -ExecutionPolicy Bypass .\scripts\windows-cert-manager.ps1 install
+### Platform-Specific Notes
 
-# Check status
-powershell -ExecutionPolicy Bypass .\scripts\windows-cert-manager.ps1 status
+**macOS:**
+- You'll be prompted for your password
+- Certificate added to login keychain
+- Works with Safari, Chrome, and system apps
 
-# Remove
-powershell -ExecutionPolicy Bypass .\scripts\windows-cert-manager.ps1 remove
-```
+**Windows:**
+- Installs to Current User store (no admin required)
+- For system-wide trust, run as Administrator
+- Works with Chrome, Edge, and Windows apps
 
-### Manual Installation
+**Linux:**
+- Requires sudo for system-wide installation
+- Automatically detects your distribution
+- Works with Chrome, Chromium, and system tools
 
-If automatic installation fails:
+**Firefox:**
+- Uses its own certificate store on all platforms
+- See [CERTIFICATE_INSTALLATION.md](./CERTIFICATE_INSTALLATION.md#firefox-on-linux) for Firefox setup
 
-1. Start TraceTap once: `./tracetap-linux-x64 --listen 8080`
-2. Find the certificate at `~/.mitmproxy/mitmproxy-ca-cert.pem`
-3. Install it manually:
-   - **Linux:** Copy to `/usr/local/share/ca-certificates/` and run `update-ca-certificates`
-   - **macOS:** Double-click the certificate and add to System keychain, mark as "Always Trust"
-   - **Windows:** Double-click certificate → Install → Place in "Trusted Root Certification Authorities"
-4. Restart your browser
+### Troubleshooting
 
-### Browser-Specific Setup
+If installation fails or you see certificate warnings:
 
-**Firefox (uses its own certificate store):**
-1. Go to Preferences → Privacy & Security → Certificates → View Certificates
-2. Click **Import**
-3. Select `~/.mitmproxy/mitmproxy-ca-cert.pem`
-4. Check "Trust this CA to identify websites"
-5. OK
+1. **Verify certificate was generated:**
+   ```bash
+   ls ~/.mitmproxy/mitmproxy-ca-cert.pem
+   ```
+
+2. **Reinstall certificate:**
+   ```bash
+   python3 cert_manager.py uninstall
+   python3 cert_manager.py install
+   ```
+
+3. **Check installation status:**
+   ```bash
+   python3 cert_manager.py verify
+   ```
+
+4. **Restart your browser** after installation
+
+For detailed troubleshooting, see [TROUBLESHOOTING.md](./TROUBLESHOOTING.md)
 
 **Chrome/Edge:**
 - Uses system certificate store
@@ -449,23 +468,30 @@ netstat -ano | findstr :8080  # Windows
 
 **Solutions:**
 
-**1. Check certificate status:**
+**1. Verify certificate installation:**
 ```bash
-./scripts/chrome-cert-manager.sh status  # Linux
-./scripts/macos-cert-manager.sh status   # macOS
+cd src/tracetap/scripts
+python3 cert_manager.py verify
 ```
 
-**2. Reinstall certificate:**
+**2. Check certificate info:**
 ```bash
-./scripts/chrome-cert-manager.sh remove
-./scripts/chrome-cert-manager.sh install
+python3 cert_manager.py info
 ```
 
-**3. Restart browser** after installation
+**3. Reinstall certificate:**
+```bash
+python3 cert_manager.py uninstall
+python3 cert_manager.py install
+```
 
-**4. For Firefox:**
-- Manually import certificate from `~/.mitmproxy/mitmproxy-ca-cert.pem`
-- Preferences → Privacy & Security → Certificates → View Certificates → Import
+**4. Restart browser completely** (close all windows)
+
+**5. For Firefox:**
+- Firefox uses its own certificate store
+- See [CERTIFICATE_INSTALLATION.md](./CERTIFICATE_INSTALLATION.md#firefox-on-linux) for Firefox-specific instructions
+
+For more help, see [TROUBLESHOOTING.md](./TROUBLESHOOTING.md)
 
 ---
 
@@ -586,18 +612,27 @@ python tracetap-ai-postman.py capture.json \
 
 **1. Remove certificate when done**
 ```bash
-./scripts/chrome-cert-manager.sh remove
+cd src/tracetap/scripts
+python3 cert_manager.py uninstall
 ```
 
 **2. Use for local development only**
 - Never use TraceTap on production systems
 - Don't install on shared/public computers
+- Remove certificate from shared development machines
 
 **3. Review captured data before sharing**
 ```bash
 # Check for sensitive data
-grep -i "password\|token\|secret" capture.json
+grep -i "password\|token\|secret\|api.key" capture.json
+
+# Or use your editor's search
 ```
+
+**4. Protect your captures**
+- Raw logs may contain authentication tokens
+- Don't commit capture files to Git
+- Add to `.gitignore`: `*.json` (capture files)
 
 ---
 
