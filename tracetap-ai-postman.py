@@ -232,7 +232,7 @@ class AIFlowGenerator:
 
             # Call Claude API
             message = self.client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-5-20250929",
                 max_tokens=8192,
                 messages=[{"role": "user", "content": prompt}]
             )
@@ -433,7 +433,7 @@ but no URLs contain "destroy", ignore those keywords and focus only on what's ac
         try:
             yaml.safe_load(response)
             return response
-        except:
+        except (yaml.YAMLError, AttributeError, TypeError):
             return None
 
     def _generate_basic_flow(self) -> Dict[str, Any]:
@@ -738,7 +738,7 @@ class TraceTapAI:
                 if actual_body and isinstance(actual_body, str):
                     try:
                         actual_body = json.loads(actual_body)
-                    except:
+                    except (json.JSONDecodeError, TypeError, ValueError):
                         pass
 
                 # Mark this entry as used
@@ -807,7 +807,7 @@ class TraceTapAI:
             if body and isinstance(body, str):
                 try:
                     body = json.loads(body)
-                except:
+                except (json.JSONDecodeError, TypeError, ValueError):
                     pass
 
             # Generate name from URL

@@ -19,7 +19,7 @@ class PostmanExporter:
     """
     Exports captured traffic to Postman Collection v2.1 format.
     """
-    
+
     @staticmethod
     def export(records: List[Dict[str, Any]], session_name: str, output_path: str) -> None:
         """
@@ -96,10 +96,18 @@ class PostmanExporter:
 
         # Write to file
         output_file = Path(output_path)
-        output_file.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            output_file.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            print(f"❌ Error creating directory {output_file.parent}: {e}", flush=True)
+            raise
 
-        with open(output_file, 'w', encoding='utf-8') as f:
-            json.dump(collection, f, indent=2, ensure_ascii=False)
+        try:
+            with open(output_file, 'w', encoding='utf-8') as f:
+                json.dump(collection, f, indent=2, ensure_ascii=False)
+        except OSError as e:
+            print(f"❌ Error writing to {output_path}: {e}", flush=True)
+            raise
 
         print(f"✓ Exported {len(records)} requests → {output_path}", flush=True)
 
@@ -108,7 +116,7 @@ class RawLogExporter:
     """
     Exports captured traffic to raw JSON format.
     """
-    
+
     @staticmethod
     def export(records: List[Dict[str, Any]], session_name: str, output_path: str,
                host_filters: List[str], regex_filter: str) -> None:
@@ -132,7 +140,11 @@ class RawLogExporter:
             regex_filter: Regex filter that was active (if any)
         """
         output_file = Path(output_path)
-        output_file.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            output_file.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            print(f"❌ Error creating directory {output_file.parent}: {e}", flush=True)
+            raise
 
         # Build the log data structure
         log_data = {
@@ -147,8 +159,12 @@ class RawLogExporter:
         }
 
         # Write to file with pretty formatting
-        with open(output_file, 'w', encoding='utf-8') as f:
-            json.dump(log_data, f, indent=2, ensure_ascii=False)
+        try:
+            with open(output_file, 'w', encoding='utf-8') as f:
+                json.dump(log_data, f, indent=2, ensure_ascii=False)
+        except OSError as e:
+            print(f"❌ Error writing to {output_path}: {e}", flush=True)
+            raise
 
         # Show file size for user feedback
         file_size = output_file.stat().st_size / 1024  # Convert to KB

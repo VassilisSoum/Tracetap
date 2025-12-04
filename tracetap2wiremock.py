@@ -114,7 +114,7 @@ Focus on making stubs reusable and maintainable."""
 
         try:
             response = self.client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-5-20250929",
                 max_tokens=16000,
                 messages=[{"role": "user", "content": prompt}]
             )
@@ -122,16 +122,45 @@ Focus on making stubs reusable and maintainable."""
             # Parse Claude's response
             content = response.content[0].text
 
-            # Extract JSON from response
+            # Extract JSON from response with balanced bracket detection
             json_start = content.find('{')
-            json_end = content.rfind('}') + 1
-            if json_start >= 0 and json_end > json_start:
-                ai_config = json.loads(content[json_start:json_end])
-                print(f"✓ Claude generated {len(ai_config.get('stubs', []))} intelligent stub configurations")
-                return self._convert_ai_config_to_stubs(ai_config, raw_captures, priority)
-            else:
-                print("⚠ Could not parse AI response, using basic stubs")
-                return self._generate_basic_stubs(raw_captures, priority)
+            if json_start >= 0:
+                # Find matching closing brace with proper nesting
+                depth = 0
+                json_end = -1
+                in_string = False
+                escape_next = False
+
+                for i in range(json_start, len(content)):
+                    char = content[i]
+
+                    if escape_next:
+                        escape_next = False
+                        continue
+
+                    if char == '\\':
+                        escape_next = True
+                        continue
+
+                    if char == '"' and not escape_next:
+                        in_string = not in_string
+
+                    if not in_string:
+                        if char == '{':
+                            depth += 1
+                        elif char == '}':
+                            depth -= 1
+                            if depth == 0:
+                                json_end = i + 1
+                                break
+
+                if json_end > json_start:
+                    ai_config = json.loads(content[json_start:json_end])
+                    print(f"✓ Claude generated {len(ai_config.get('stubs', []))} intelligent stub configurations")
+                    return self._convert_ai_config_to_stubs(ai_config, raw_captures, priority)
+
+            print("⚠ Could not parse AI response, using basic stubs")
+            return self._generate_basic_stubs(raw_captures, priority)
 
         except Exception as e:
             print(f"⚠ AI generation failed: {e}")
@@ -213,7 +242,8 @@ Focus on making stubs reusable and maintainable."""
                 if url_pattern in capture.get("url", ""):
                     return capture
 
-        return captures[0] if captures else None
+        # No match found - return None instead of first capture
+        return None
 
     def _build_request_matcher(self, ai_stub: Dict[str, Any], capture: Dict[str, Any]) -> Dict[str, Any]:
         """Build WireMock request matcher from AI config and capture"""
@@ -252,7 +282,7 @@ Focus on making stubs reusable and maintainable."""
             try:
                 body = json.loads(capture["request_body"])
                 request["bodyPatterns"] = [{"equalToJson": json.dumps(body)}]
-            except:
+            except (json.JSONDecodeError, TypeError, ValueError):
                 pass
 
         return request
@@ -275,7 +305,7 @@ Focus on making stubs reusable and maintainable."""
         if not resp_body and capture.get("response_body"):
             try:
                 resp_body = json.loads(capture["response_body"])
-            except:
+            except (json.JSONDecodeError, TypeError, ValueError):
                 resp_body = capture["response_body"]
 
         if resp_body:
@@ -307,7 +337,7 @@ Focus on making stubs reusable and maintainable."""
                 try:
                     body = json.loads(capture["response_body"])
                     stub["response"]["jsonBody"] = body
-                except:
+                except (json.JSONDecodeError, TypeError, ValueError):
                     stub["response"]["body"] = capture["response_body"]
 
             # Add response headers

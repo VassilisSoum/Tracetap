@@ -9,8 +9,31 @@ Provides helper functions for:
 
 from mitmproxy import http
 
+# Constants for body size limiting
+MAX_BODY_SIZE = 64 * 1024  # 64 KB
 
-def safe_body(text: str, raw: bytes, max_bytes: int = 64 * 1024) -> str:
+# HTTP status code ranges
+HTTP_STATUS_2XX_MIN = 200
+HTTP_STATUS_2XX_MAX = 300
+HTTP_STATUS_3XX_MIN = 300
+HTTP_STATUS_3XX_MAX = 400
+HTTP_STATUS_4XX_MIN = 400
+HTTP_STATUS_4XX_MAX = 500
+HTTP_STATUS_5XX_MIN = 500
+HTTP_STATUS_5XX_MAX = 600
+
+# ANSI color codes
+ANSI_GREEN = "\033[32m"
+ANSI_CYAN = "\033[36m"
+ANSI_YELLOW = "\033[33m"
+ANSI_RED = "\033[31m"
+ANSI_RESET = "\033[0m"
+
+# Time conversion
+MILLISECONDS_PER_SECOND = 1000
+
+
+def safe_body(text: str, raw: bytes, max_bytes: int = MAX_BODY_SIZE) -> str:
     """
     Safely extract body text, limiting size to prevent memory issues.
 
@@ -35,7 +58,7 @@ def safe_body(text: str, raw: bytes, max_bytes: int = 64 * 1024) -> str:
             # Try to decode raw bytes as UTF-8
             return raw[:max_bytes].decode('utf-8', errors='replace')
         return ""
-    except Exception:
+    except (UnicodeDecodeError, AttributeError, TypeError):
         # Fallback for binary data or encoding errors
         return f"[binary data: {len(raw)} bytes]" if raw else ""
 
@@ -64,9 +87,9 @@ def calc_duration(flow: http.HTTPFlow) -> int:
         if hasattr(flow, 'server_conn') and flow.server_conn and flow.server_conn.timestamp_end:
             # Calculate duration in seconds, then convert to milliseconds
             duration = flow.server_conn.timestamp_end - flow.server_conn.timestamp_start
-            return int(duration * 1000)
-    except Exception:
-        # If timing data is not available, return 0
+            return int(duration * MILLISECONDS_PER_SECOND)
+    except (AttributeError, TypeError):
+        # If timing data is not available or calculation fails, return 0
         pass
     return 0
 
@@ -87,12 +110,12 @@ def status_color(status: int) -> str:
     Returns:
         ANSI escape code for color
     """
-    if 200 <= status < 300:
-        return "\033[32m"  # Green
-    elif 300 <= status < 400:
-        return "\033[36m"  # Cyan
-    elif 400 <= status < 500:
-        return "\033[33m"  # Yellow
-    elif 500 <= status < 600:
-        return "\033[31m"  # Red
+    if HTTP_STATUS_2XX_MIN <= status < HTTP_STATUS_2XX_MAX:
+        return ANSI_GREEN
+    elif HTTP_STATUS_3XX_MIN <= status < HTTP_STATUS_3XX_MAX:
+        return ANSI_CYAN
+    elif HTTP_STATUS_4XX_MIN <= status < HTTP_STATUS_4XX_MAX:
+        return ANSI_YELLOW
+    elif HTTP_STATUS_5XX_MIN <= status < HTTP_STATUS_5XX_MAX:
+        return ANSI_RED
     return ""

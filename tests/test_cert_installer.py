@@ -466,5 +466,161 @@ class TestEdgeCases:
         assert "Certificate not found" in captured.out
 
 
+class TestInstallRouting:
+    """Test suite for install() method platform routing."""
+
+    @patch.object(CertificateInstaller, '_install_macos')
+    @patch.object(CertificateInstaller, 'validate_certificate')
+    def test_install_routes_to_macos(self, mock_validate, mock_install_macos, mock_cert_file):
+        """Test install() method routes to macOS implementation."""
+        mock_validate.return_value = True
+        mock_install_macos.return_value = True
+
+        installer = CertificateInstaller(cert_path=mock_cert_file)
+        installer.platform = "Darwin"
+
+        result = installer.install()
+
+        mock_validate.assert_called_once()
+        mock_install_macos.assert_called_once()
+        assert result is True
+
+    @patch.object(CertificateInstaller, '_install_windows')
+    @patch.object(CertificateInstaller, 'validate_certificate')
+    def test_install_routes_to_windows(self, mock_validate, mock_install_windows, mock_cert_file):
+        """Test install() method routes to Windows implementation."""
+        mock_validate.return_value = True
+        mock_install_windows.return_value = True
+
+        installer = CertificateInstaller(cert_path=mock_cert_file)
+        installer.platform = "Windows"
+
+        result = installer.install()
+
+        mock_validate.assert_called_once()
+        mock_install_windows.assert_called_once()
+        assert result is True
+
+    @patch.object(CertificateInstaller, '_install_linux')
+    @patch.object(CertificateInstaller, 'validate_certificate')
+    def test_install_routes_to_linux(self, mock_validate, mock_install_linux, mock_cert_file):
+        """Test install() method routes to Linux implementation."""
+        mock_validate.return_value = True
+        mock_install_linux.return_value = True
+
+        installer = CertificateInstaller(cert_path=mock_cert_file)
+        installer.platform = "Linux"
+
+        result = installer.install()
+
+        mock_validate.assert_called_once()
+        mock_install_linux.assert_called_once()
+        assert result is True
+
+    @patch.object(CertificateInstaller, 'validate_certificate')
+    def test_install_validates_certificate_first(self, mock_validate, mock_cert_file):
+        """Test install() calls validate_certificate before proceeding."""
+        mock_validate.return_value = False
+
+        installer = CertificateInstaller(cert_path=mock_cert_file)
+
+        result = installer.install()
+
+        mock_validate.assert_called_once()
+        assert result is False
+
+    @patch.object(CertificateInstaller, '_show_manual_instructions')
+    @patch.object(CertificateInstaller, '_install_macos')
+    @patch.object(CertificateInstaller, 'validate_certificate')
+    def test_install_exception_handling(self, mock_validate, mock_install_macos, mock_show, mock_cert_file, capsys):
+        """Test install() handles exceptions and shows manual instructions."""
+        mock_validate.return_value = True
+        mock_install_macos.side_effect = RuntimeError("Test error")
+
+        installer = CertificateInstaller(cert_path=mock_cert_file)
+        installer.platform = "Darwin"
+
+        result = installer.install()
+
+        captured = capsys.readouterr()
+        assert "Installation failed" in captured.out
+        mock_show.assert_called_once()
+        assert result is False
+
+    @patch.object(CertificateInstaller, 'validate_certificate')
+    def test_install_unsupported_platform(self, mock_validate, mock_cert_file, capsys):
+        """Test install() rejects unsupported platforms."""
+        mock_validate.return_value = True
+
+        installer = CertificateInstaller(cert_path=mock_cert_file)
+        installer.platform = "UnsupportedOS"
+
+        result = installer.install()
+
+        captured = capsys.readouterr()
+        assert "Unsupported platform" in captured.out
+        assert result is False
+
+
+class TestPlatformSpecificRouting:
+    """Test suite for platform-specific installation routing paths."""
+
+    @patch('subprocess.run')
+    @patch.object(CertificateInstaller, '_detect_linux_distro')
+    def test_linux_unknown_distro_fallback(self, mock_detect, mock_run, mock_cert_file):
+        """Test Linux installation falls back to Debian for unknown distro."""
+        mock_detect.return_value = 'unknown'
+        mock_run.return_value = Mock(returncode=0, stdout="", stderr="")
+
+        installer = CertificateInstaller(cert_path=mock_cert_file, verbose=True)
+        result = installer._install_linux()
+
+        # Should attempt Debian installation
+        assert result is True
+        # Verify sudo cp was called with Debian path
+        cp_calls = [call for call in mock_run.call_args_list
+                    if 'cp' in str(call) and 'ca-certificates' in str(call)]
+        assert len(cp_calls) > 0
+
+    @patch.object(CertificateInstaller, '_install_linux_debian')
+    @patch.object(CertificateInstaller, '_detect_linux_distro')
+    def test_linux_distro_detection_chain_debian(self, mock_detect, mock_debian, mock_cert_file):
+        """Test Debian distro detection leads to Debian installation."""
+        mock_detect.return_value = 'debian'
+        mock_debian.return_value = True
+
+        installer = CertificateInstaller(cert_path=mock_cert_file)
+        result = installer._install_linux()
+
+        mock_debian.assert_called_once()
+        assert result is True
+
+    @patch.object(CertificateInstaller, '_install_linux_redhat')
+    @patch.object(CertificateInstaller, '_detect_linux_distro')
+    def test_linux_distro_detection_chain_fedora(self, mock_detect, mock_rhel, mock_cert_file):
+        """Test Fedora distro detection leads to RHEL installation."""
+        mock_detect.return_value = 'fedora'
+        mock_rhel.return_value = True
+
+        installer = CertificateInstaller(cert_path=mock_cert_file)
+        result = installer._install_linux()
+
+        mock_rhel.assert_called_once()
+        assert result is True
+
+    @patch.object(CertificateInstaller, '_install_linux_arch')
+    @patch.object(CertificateInstaller, '_detect_linux_distro')
+    def test_linux_distro_detection_chain_arch(self, mock_detect, mock_arch, mock_cert_file):
+        """Test Arch distro detection leads to Arch installation."""
+        mock_detect.return_value = 'arch'
+        mock_arch.return_value = True
+
+        installer = CertificateInstaller(cert_path=mock_cert_file)
+        result = installer._install_linux()
+
+        mock_arch.assert_called_once()
+        assert result is True
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

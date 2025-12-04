@@ -8,7 +8,7 @@ Uses modular components for filtering, exporting, and utilities.
 import os
 import sys
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from mitmproxy import http
 
@@ -35,19 +35,19 @@ class TraceTapAddon:
         self.records: List[Dict[str, Any]] = []
 
         # Flag to ensure we only initialize once
-        self.initialized = False
+        self.initialized: bool = False
 
         # Configuration attributes (set via environment variables)
-        self.export_path = ''           # Postman collection output path
-        self.raw_log_path = ''          # Raw JSON log output path
-        self.session_name = 'tracetap-session'  # Session identifier
-        self.quiet = False              # Suppress console output
-        self.verbose = False            # Show detailed filtering info
+        self.export_path: str = ''           # Postman collection output path
+        self.raw_log_path: str = ''          # Raw JSON log output path
+        self.session_name: str = 'tracetap-session'  # Session identifier
+        self.quiet: bool = False              # Suppress console output
+        self.verbose: bool = False            # Show detailed filtering info
 
         # Filtering
-        self.filter_hosts = ''          # Comma-separated host list
-        self.filter_regex = ''          # Regex pattern for URL matching
-        self.request_filter = None      # RequestFilter instance
+        self.filter_hosts: str = ''          # Comma-separated host list
+        self.filter_regex: str = ''          # Regex pattern for URL matching
+        self.request_filter: Optional[RequestFilter] = None      # RequestFilter instance
 
     def _lazy_init(self):
         """

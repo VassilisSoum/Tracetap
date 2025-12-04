@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from cert_installer import CertificateInstaller
 
 
-def main():
+def main() -> None:
     """Main entry point for certificate manager CLI."""
     parser = argparse.ArgumentParser(
         description="TraceTap Certificate Manager - Manage mitmproxy CA certificates",
@@ -78,13 +78,13 @@ For more help:
     elif args.command == "verify":
         success = installer.verify()
         if success:
-            print()
-            print("✅ Certificate is installed and trusted")
-            print()
-            print("🧪 To test HTTPS interception:")
-            print("   1. Start TraceTap: python tracetap.py --listen 8080")
-            print("   2. Configure proxy: export HTTP(S)_PROXY=http://localhost:8080")
-            print("   3. Test: curl https://example.com")
+            print(flush=True)
+            print("✅ Certificate is installed and trusted", flush=True)
+            print(flush=True)
+            print("🧪 To test HTTPS interception:", flush=True)
+            print("   1. Start TraceTap: python tracetap.py --listen 8080", flush=True)
+            print("   2. Configure proxy: export HTTP(S)_PROXY=http://localhost:8080", flush=True)
+            print("   3. Test: curl https://example.com", flush=True)
         sys.exit(0 if success else 1)
 
     elif args.command == "info":
@@ -92,8 +92,8 @@ For more help:
         sys.exit(0)
 
     elif args.command == "uninstall":
-        print("🗑️  Uninstalling mitmproxy certificate...")
-        print()
+        print("🗑️  Uninstalling mitmproxy certificate...", flush=True)
+        print(flush=True)
         success = uninstall_certificate(installer)
         sys.exit(0 if success else 1)
 
@@ -117,13 +117,13 @@ def uninstall_certificate(installer: CertificateInstaller) -> bool:
     elif platform_name == "Linux":
         return uninstall_linux(installer)
     else:
-        print(f"❌ Unsupported platform: {platform_name}")
+        print(f"❌ Unsupported platform: {platform_name}", flush=True)
         return False
 
 
 def uninstall_macos(installer: CertificateInstaller) -> bool:
     """Uninstall certificate from macOS keychain."""
-    print("🍎 Removing from macOS keychain...")
+    print("🍎 Removing from macOS keychain...", flush=True)
 
     returncode, stdout, stderr = installer._run_command(
         ["security", "delete-certificate", "-c", installer.CERT_NAME, "login.keychain"],
@@ -132,19 +132,19 @@ def uninstall_macos(installer: CertificateInstaller) -> bool:
 
     if returncode != 0:
         if "could not be found" in stderr.lower():
-            print("⚠️  Certificate not found in keychain (already removed?)")
+            print("⚠️  Certificate not found in keychain (already removed?)", flush=True)
             return True
         else:
-            print(f"❌ Failed to remove certificate: {stderr}")
+            print(f"❌ Failed to remove certificate: {stderr}", flush=True)
             return False
 
-    print("✅ Certificate removed from macOS keychain")
+    print("✅ Certificate removed from macOS keychain", flush=True)
     return True
 
 
 def uninstall_windows(installer: CertificateInstaller) -> bool:
     """Uninstall certificate from Windows trust store."""
-    print("🪟 Removing from Windows trust store...")
+    print("🪟 Removing from Windows trust store...", flush=True)
 
     ps_script = f"""
 $ErrorActionPreference = "Stop"
@@ -179,19 +179,19 @@ try {{
     )
 
     if returncode == 2:
-        print("⚠️  Certificate not found in trust store (already removed?)")
+        print("⚠️  Certificate not found in trust store (already removed?)", flush=True)
         return True
     elif returncode != 0:
-        print(f"❌ Failed to remove certificate: {stderr}")
+        print(f"❌ Failed to remove certificate: {stderr}", flush=True)
         return False
 
-    print("✅ Certificate removed from Windows trust store")
+    print("✅ Certificate removed from Windows trust store", flush=True)
     return True
 
 
 def uninstall_linux(installer: CertificateInstaller) -> bool:
     """Uninstall certificate from Linux system trust."""
-    print("🐧 Removing from Linux system trust...")
+    print("🐧 Removing from Linux system trust...", flush=True)
 
     distro = installer._detect_linux_distro()
 
@@ -209,10 +209,10 @@ def uninstall_linux(installer: CertificateInstaller) -> bool:
         update_cmd = ["sudo", "update-ca-certificates", "--fresh"]
 
     if not cert_path.exists():
-        print(f"⚠️  Certificate not found at {cert_path} (already removed?)")
+        print(f"⚠️  Certificate not found at {cert_path} (already removed?)", flush=True)
         return True
 
-    print(f"📥 Removing {cert_path}")
+    print(f"📥 Removing {cert_path}", flush=True)
     returncode, stdout, stderr = installer._run_command(
         ["sudo", "rm", str(cert_path)],
         check=False,
@@ -220,10 +220,10 @@ def uninstall_linux(installer: CertificateInstaller) -> bool:
     )
 
     if returncode != 0:
-        print(f"❌ Failed to remove certificate file")
+        print(f"❌ Failed to remove certificate file", flush=True)
         return False
 
-    print("🔄 Updating CA certificates...")
+    print("🔄 Updating CA certificates...", flush=True)
     returncode, stdout, stderr = installer._run_command(
         update_cmd,
         check=False,
@@ -231,10 +231,10 @@ def uninstall_linux(installer: CertificateInstaller) -> bool:
     )
 
     if returncode != 0:
-        print(f"❌ Failed to update CA certificates")
+        print(f"❌ Failed to update CA certificates", flush=True)
         return False
 
-    print("✅ Certificate removed from Linux system trust")
+    print("✅ Certificate removed from Linux system trust", flush=True)
     return True
 
 

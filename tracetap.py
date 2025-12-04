@@ -24,6 +24,19 @@ from mitmproxy import http
 from mitmproxy.tools import main as mitmain
 
 # ============================================================================
+# CONSTANTS
+# ============================================================================
+
+# Default proxy port
+DEFAULT_PROXY_PORT = 8080
+
+# Banner formatting
+BANNER_WIDTH = 50
+FIELD_PADDING = 28
+EXPORT_PATH_MAX_LEN = 38
+EXPORT_PATH_TRUNCATE_LEN = 35
+
+# ============================================================================
 # ADDON CODE
 # ============================================================================
 # The addon code is stored as a string and written to a temporary file.
@@ -542,9 +555,9 @@ Press Ctrl+C to stop and export.
     parser.add_argument(
         '--listen',
         type=int,
-        default=8080,
+        default=DEFAULT_PROXY_PORT,
         metavar='PORT',
-        help='Port to listen on (default: 8080)'
+        help=f'Port to listen on (default: {DEFAULT_PROXY_PORT})'
     )
 
     parser.add_argument(
@@ -636,18 +649,18 @@ def main():
     os.environ['TRACETAP_FILTER_REGEX'] = args.filter_regex
 
     # Print startup banner
-    print(f"┌{'─' * 50}┐")
+    print(f"┌{'─' * BANNER_WIDTH}┐")
     print(f"│ TraceTap HTTP/HTTPS Proxy                       │")
-    print(f"├{'─' * 50}┤")
-    print(f"│ Listening: http://0.0.0.0:{args.listen:<28} │")
+    print(f"├{'─' * BANNER_WIDTH}┤")
+    print(f"│ Listening: http://0.0.0.0:{args.listen:<{FIELD_PADDING}} │")
     if args.export:
-        export_display = args.export if len(args.export) <= 38 else args.export[:35] + "..."
-        print(f"│ Export:    {export_display:<38} │")
+        export_display = args.export if len(args.export) <= EXPORT_PATH_MAX_LEN else args.export[:EXPORT_PATH_TRUNCATE_LEN] + "..."
+        print(f"│ Export:    {export_display:<{EXPORT_PATH_MAX_LEN}} │")
     if args.raw_log:
-        raw_display = args.raw_log if len(args.raw_log) <= 38 else args.raw_log[:35] + "..."
-        print(f"│ Raw Log:   {raw_display:<38} │")
-    print(f"│ Session:   {args.session:<38} │")
-    print(f"└{'─' * 50}┘")
+        raw_display = args.raw_log if len(args.raw_log) <= EXPORT_PATH_MAX_LEN else args.raw_log[:EXPORT_PATH_TRUNCATE_LEN] + "..."
+        print(f"│ Raw Log:   {raw_display:<{EXPORT_PATH_MAX_LEN}} │")
+    print(f"│ Session:   {args.session:<{EXPORT_PATH_MAX_LEN}} │")
+    print(f"└{'─' * BANNER_WIDTH}┘")
     print()
     print("Configure your client:")
     print(f"  export HTTP_PROXY=http://localhost:{args.listen}")
@@ -693,7 +706,7 @@ def main():
         if addon_file and os.path.exists(addon_file):
             try:
                 os.unlink(addon_file)
-            except:
+            except OSError:
                 # Ignore cleanup errors
                 pass
 

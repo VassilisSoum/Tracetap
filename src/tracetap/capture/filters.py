@@ -12,30 +12,30 @@ from typing import List, Optional
 class RequestFilter:
     """
     Handles filtering logic to determine which requests should be captured.
-    
+
     Supports:
     - Exact host matching (e.g., "api.example.com")
     - Wildcard matching (e.g., "*.example.com")
     - Regex pattern matching on URL and host
     """
-    
+
     def __init__(self, host_filters: List[str], regex_pattern: Optional[str] = None):
         """
         Initialize the filter.
-        
+
         Args:
             host_filters: List of hosts to match (supports wildcards)
             regex_pattern: Optional regex pattern to match against URLs
         """
         self.host_filters = host_filters
         self.regex_pattern = None
-        
+
         if regex_pattern:
             try:
                 self.regex_pattern = re.compile(regex_pattern)
             except re.error as e:
                 print(f"Invalid regex pattern: {e}", flush=True)
-    
+
     def should_capture(self, host: str, url: str, verbose: bool = False) -> bool:
         """
         Determine if a request should be captured based on filters.
