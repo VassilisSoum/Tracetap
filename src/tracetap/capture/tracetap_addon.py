@@ -14,7 +14,7 @@ from mitmproxy import http
 
 # Import our modular components
 from filters import RequestFilter
-from exporters import PostmanExporter, RawLogExporter
+from exporters import PostmanExporter, RawLogExporter, OpenAPIExporter
 from utils import safe_body, calc_duration, status_color
 
 
@@ -40,6 +40,7 @@ class TraceTapAddon:
         # Configuration attributes (set via environment variables)
         self.export_path: str = ''           # Postman collection output path
         self.raw_log_path: str = ''          # Raw JSON log output path
+        self.openapi_path: str = ''          # OpenAPI spec output path
         self.session_name: str = 'tracetap-session'  # Session identifier
         self.quiet: bool = False              # Suppress console output
         self.verbose: bool = False            # Show detailed filtering info
@@ -65,6 +66,7 @@ class TraceTapAddon:
         # Read configuration from environment variables
         self.export_path = os.environ.get('TRACETAP_EXPORT_PATH', '')
         self.raw_log_path = os.environ.get('TRACETAP_RAW_LOG_PATH', '')
+        self.openapi_path = os.environ.get('TRACETAP_OPENAPI_PATH', '')
         self.session_name = os.environ.get('TRACETAP_SESSION', 'tracetap-session')
         self.quiet = os.environ.get('TRACETAP_QUIET', 'false') == 'true'
         self.verbose = os.environ.get('TRACETAP_VERBOSE', 'false') == 'true'
@@ -180,14 +182,27 @@ class TraceTapAddon:
             try:
                 host_filters = [h.strip() for h in self.filter_hosts.split(',') if h.strip()]
                 RawLogExporter.export(
-                    self.records, 
-                    self.session_name, 
+                    self.records,
+                    self.session_name,
                     self.raw_log_path,
                     host_filters,
                     self.filter_regex
                 )
             except Exception as e:
                 print(f"Error exporting raw log: {e}", file=sys.stderr, flush=True)
+                import traceback
+                traceback.print_exc()
+
+        # Export to OpenAPI spec if requested
+        if self.openapi_path:
+            try:
+                OpenAPIExporter.export(
+                    self.records,
+                    self.session_name,
+                    self.openapi_path
+                )
+            except Exception as e:
+                print(f"Error exporting OpenAPI spec: {e}", file=sys.stderr, flush=True)
                 import traceback
                 traceback.print_exc()
 

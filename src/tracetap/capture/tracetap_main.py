@@ -51,6 +51,10 @@ Examples:
   # Only raw log (no Postman export)
   %(prog)s --listen 8080 --raw-log captured_traffic.json
 
+  # Export OpenAPI 3.0 specification
+  %(prog)s --listen 8080 --export-openapi openapi.json
+  %(prog)s --listen 8080 --export api.json --export-openapi openapi.json
+
   # Capture only specific hosts
   %(prog)s --listen 8080 --export api.json --filter-host "api.example.com"
   %(prog)s --listen 8080 --filter-host "example.com,api.github.com"
@@ -135,6 +139,15 @@ Press Ctrl+C to stop and export.
         help='Capture only requests matching this regex pattern (applied to URL and host)'
     )
 
+    parser.add_argument(
+        '--export-openapi',
+        type=str,
+        default='',
+        metavar='PATH',
+        dest='export_openapi',
+        help='Export OpenAPI 3.0 specification to this path on shutdown'
+    )
+
     return parser.parse_args()
 
 
@@ -162,6 +175,8 @@ def main():
         os.environ['TRACETAP_EXPORT_PATH'] = args.export
     if args.raw_log:
         os.environ['TRACETAP_RAW_LOG_PATH'] = args.raw_log
+    if args.export_openapi:
+        os.environ['TRACETAP_OPENAPI_PATH'] = args.export_openapi
     os.environ['TRACETAP_SESSION'] = args.session
     os.environ['TRACETAP_QUIET'] = 'true' if args.quiet else 'false'
     os.environ['TRACETAP_VERBOSE'] = 'true' if args.verbose else 'false'
@@ -179,6 +194,9 @@ def main():
     if args.raw_log:
         raw_display = args.raw_log if len(args.raw_log) <= 38 else args.raw_log[:35] + "..."
         print(f"│ Raw Log:   {raw_display:<38} │")
+    if args.export_openapi:
+        openapi_display = args.export_openapi if len(args.export_openapi) <= 38 else args.export_openapi[:35] + "..."
+        print(f"│ OpenAPI:   {openapi_display:<38} │")
     print(f"│ Session:   {args.session:<38} │")
     print(f"└{'─' * 50}┘")
     print()
