@@ -8,7 +8,7 @@ The actual implementation is in src/tracetap/capture/tracetap_main.py
 Usage:
     python tracetap.py --listen 8080 --export output.json
 
-For more information, see TRACETAP_COMPLETE_GUIDE.md
+For more information, see README.md
 """
 
 import sys
