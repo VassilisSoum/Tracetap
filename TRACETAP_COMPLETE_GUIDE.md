@@ -209,26 +209,33 @@ TraceTap is a comprehensive HTTP/HTTPS traffic capture proxy that records API in
 
 - **Python**: 3.8 or higher
 - **pip**: Python package installer
+- **Git**: For cloning the repository
 - **Operating System**: Linux, macOS, or Windows
 
-### Step 1: Install Dependencies
+### Step 1: Clone the Repository
+
+TraceTap is distributed as source code. Clone the repository to get started:
 
 ```bash
-# Navigate to TraceTap directory
-cd /path/to/TraceTap
+# Clone the repository
+git clone https://github.com/VassilisSoum/tracetap.git
+cd tracetap
+```
 
+### Step 2: Install Dependencies
+
+```bash
 # Install core dependencies
 pip install -r requirements.txt
 ```
 
 **Required Packages:**
 - `mitmproxy>=10.0.0,<11.0.0` - HTTP proxy framework
-- `pyinstaller>=5.0.0` - Executable building
-- `anthropic>=0.71.0` - Claude AI API client
+- `anthropic>=0.71.0` - Claude AI API client (for AI features)
 - `PyYAML>=6.0` - YAML parsing for flow specs
 - `typing-extensions>=4.3,<=4.11.0` - Type hints compatibility
 
-### Step 2: Install Certificate (REQUIRED for HTTPS)
+### Step 3: Install Certificate (REQUIRED for HTTPS)
 
 TraceTap requires installing the mitmproxy CA certificate to intercept HTTPS traffic.
 
@@ -265,7 +272,7 @@ python src/tracetap/scripts/cert_manager.py verify
 python src/tracetap/scripts/cert_manager.py info
 ```
 
-### Step 3: Set Up API Key (Optional - for AI Features)
+### Step 4: Set Up API Key (Optional - for AI Features)
 
 If you want to use AI-powered features:
 
@@ -280,7 +287,7 @@ source ~/.bashrc
 
 **Get API Key:** Sign up at https://console.anthropic.com/
 
-### Step 4: Verify Installation
+### Step 5: Verify Installation
 
 ```bash
 # Test basic capture (should show help)

@@ -63,11 +63,13 @@ Current test coverage by module:
 | Module | Coverage | Tests |
 |--------|----------|-------|
 | `cert_installer.py` | ~90% | 40+ tests |
-| `filters.py` | 0% | TODO |
-| `exporters.py` | 0% | TODO |
-| `tracetap_addon.py` | 0% | TODO |
+| `filters.py` | ~96% | 15+ tests |
+| `exporters.py` | ~85% | 30+ tests |
+| `utils.py` | ~96% | 10+ tests |
+| `tracetap_addon.py` | Moderate | Integration tests |
 
-**Goal:** 70%+ overall coverage
+**Overall Coverage:** ~81% (178 tests passing)
+**Goal:** Maintain 80%+ overall coverage
 
 ## Writing Tests
 
@@ -113,11 +115,11 @@ def test_certificate_validation_with_valid_cert(installer_with_mock_cert):
 ## CI/CD Integration
 
 Tests run automatically on:
-- Every push to main branch
+- Every push to main/master branch
 - Every pull request
-- All supported platforms (Ubuntu, macOS, Windows)
+- Multiple Python versions (3.8, 3.9, 3.10, 3.11, 3.12)
 
-See `.github/workflows/test.yml` for CI configuration.
+See `.github/workflows/ci.yaml` for CI configuration.
 
 ## Troubleshooting
 
