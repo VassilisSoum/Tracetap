@@ -25,6 +25,22 @@ try:
 except ImportError:
     ANTHROPIC_AVAILABLE = False
 
+# Import variable extraction functionality
+try:
+    from src.tracetap.replay.variables import VariableExtractor, Variable
+    VARIABLE_EXTRACTOR_AVAILABLE = True
+except ImportError:
+    VARIABLE_EXTRACTOR_AVAILABLE = False
+    print("Warning: VariableExtractor not available. Variable detection will be disabled.")
+
+# Import common utilities for secure API key handling
+try:
+    from src.tracetap.common import get_api_key_from_env
+except ImportError:
+    # Fallback if common module not available
+    def get_api_key_from_env():
+        return os.environ.get('ANTHROPIC_API_KEY')
+
 
 class URLMatcher:
     """Handles URL matching logic with various strategies"""
@@ -166,7 +182,14 @@ class RawLogProcessor:
 class AIFlowGenerator:
     """AI-powered flow generator using Claude to analyze raw logs"""
 
-    def __init__(self, raw_log: List[Dict[str, Any]], flow_intent: str = "", api_key: Optional[str] = None):
+    def __init__(self, raw_log: List[Dict[str, Any]], flow_intent: str = ""):
+        """
+        Initialize AI flow generator.
+
+        Args:
+            raw_log: List of captured HTTP requests
+            flow_intent: Description of the expected flow (SECURITY: API key from environment only)
+        """
         self.raw_log = raw_log
         self.flow_intent = flow_intent
         self.client = None
@@ -177,15 +200,15 @@ class AIFlowGenerator:
             self.ai_message = "⚠ Claude AI not available: anthropic library not installed\n  Install: pip install anthropic"
             return
 
-        # Check for API key (parameter or environment)
-        actual_api_key = api_key or os.environ.get('ANTHROPIC_API_KEY')
-        if not actual_api_key:
-            self.ai_message = "⚠ Claude AI not available: ANTHROPIC_API_KEY not set\n  Set: export ANTHROPIC_API_KEY=your_key_here\n  Or: --api-key your_key\n  Get key: https://console.anthropic.com/"
+        # SECURITY: Get API key from environment only (never accept via CLI)
+        api_key = get_api_key_from_env()
+        if not api_key:
+            self.ai_message = "⚠ Claude AI not available: ANTHROPIC_API_KEY not set\n  Set: export ANTHROPIC_API_KEY=your_key_here\n  Get key: https://console.anthropic.com/"
             return
 
         # Initialize client
         try:
-            self.client = anthropic.Anthropic(api_key=actual_api_key)
+            self.client = anthropic.Anthropic(api_key=api_key)
             self.ai_available = True
             self.ai_message = "✓ Claude AI enabled"
         except Exception as e:
@@ -491,15 +514,415 @@ class FlowProcessor:
 class PostmanCollectionBuilder:
     """Builds Postman collection JSON"""
 
-    def __init__(self, name: str, description: str = ""):
+    def __init__(self, name: str, description: str = "",
+                 enable_variables: bool = True,
+                 enable_jwt_params: bool = True,
+                 enable_path_params: bool = True,
+                 enable_base_url_params: bool = True,
+                 enable_response_extraction: bool = True):
         self.collection = {
             "info": {
                 "name": name,
                 "description": description,
                 "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
             },
-            "item": []
+            "item": [],
+            "variable": []
         }
+        self.variable_registry = {}  # Track variables: {key: {"value": val, "type": type}}
+        self.response_variables = {}  # Track response→request variable flow: {var_name: {source_idx, usage_indices}}
+        self.request_responses = []  # Store (request_data, response_data) pairs for analysis
+
+        # Variable extraction settings
+        self.enable_variables = enable_variables
+        self.enable_jwt_params = enable_jwt_params and enable_variables
+        self.enable_path_params = enable_path_params and enable_variables
+        self.enable_base_url_params = enable_base_url_params and enable_variables
+        self.enable_response_extraction = enable_response_extraction and enable_variables
+
+    def add_collection_variable(self, key: str, value: str, var_type: str = "default", description: str = "") -> None:
+        """
+        Add a variable to the collection's variable list.
+
+        Args:
+            key: Variable name (will be referenced as {{key}} in requests)
+            value: Default value for the variable
+            var_type: Type of variable (default, string, number, boolean, etc.)
+            description: Optional description of what the variable represents
+        """
+        # Skip if variable already exists
+        if key in self.variable_registry:
+            return
+
+        # Register the variable
+        self.variable_registry[key] = {
+            "value": value,
+            "type": var_type
+        }
+
+        # Add to collection
+        variable_entry = {
+            "key": key,
+            "value": value,
+            "type": var_type
+        }
+
+        if description:
+            variable_entry["description"] = description
+
+        self.collection["variable"].append(variable_entry)
+
+    def _parameterize_jwt_token(self, headers: Dict[str, str]) -> Dict[str, str]:
+        """
+        Detect JWT tokens in Authorization headers and replace with variables.
+
+        Args:
+            headers: Request headers dictionary
+
+        Returns:
+            Modified headers with JWT tokens replaced by {{variable_name}}
+        """
+        if not headers:
+            return headers
+
+        # JWT pattern: eyJ...eyJ... (Base64 encoded JSON with 3 parts)
+        jwt_pattern = r'eyJ[A-Za-z0-9_-]*\.eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*'
+
+        modified_headers = headers.copy()
+
+        # Check Authorization header
+        for header_name, header_value in headers.items():
+            if header_name.lower() == 'authorization' and isinstance(header_value, str):
+                # Check for Bearer token
+                bearer_match = re.match(r'Bearer\s+(.+)', header_value, re.IGNORECASE)
+                if bearer_match:
+                    token = bearer_match.group(1).strip()
+
+                    # Verify it's a JWT token
+                    if re.fullmatch(jwt_pattern, token):
+                        # Add variable if not already exists
+                        self.add_collection_variable(
+                            key="auth_token",
+                            value=token,
+                            var_type="string",
+                            description="JWT authentication token (extracted from Authorization header)"
+                        )
+
+                        # Replace token with variable reference
+                        modified_headers[header_name] = "Bearer {{auth_token}}"
+
+        return modified_headers
+
+    def _parameterize_path_ids(self, url: str) -> str:
+        """
+        Detect IDs in URL paths and replace with variables.
+
+        Detects:
+        - Numeric IDs (e.g., /users/123)
+        - UUIDs (e.g., /orders/a1b2c3d4-e5f6-...)
+        - MongoDB ObjectIds (24 hex characters)
+        - Base64-like IDs
+
+        Args:
+            url: Original URL
+
+        Returns:
+            URL with IDs replaced by {{variable_name}}
+        """
+        parsed = urlparse(url)
+        path_parts = parsed.path.split('/')
+
+        # ID patterns
+        uuid_pattern = r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        objectid_pattern = r'^[0-9a-f]{24}$'
+        numeric_id_pattern = r'^\d{3,}$'  # 3+ digits to avoid version numbers like v1, v2
+        base64_pattern = r'^[A-Za-z0-9_-]{20,}$'  # Long base64-like strings
+
+        parameterized_parts = []
+        prev_segment = None
+
+        for i, part in enumerate(path_parts):
+            if not part:
+                parameterized_parts.append(part)
+                continue
+
+            # Check if this part looks like an ID
+            is_uuid = re.match(uuid_pattern, part.lower())
+            is_objectid = re.match(objectid_pattern, part.lower())
+            is_numeric_id = re.match(numeric_id_pattern, part)
+            is_base64_id = re.match(base64_pattern, part)
+
+            if is_uuid or is_objectid or is_numeric_id or is_base64_id:
+                # Infer variable name from previous path segment
+                var_name = None
+                if prev_segment:
+                    # Use previous segment to name the variable (e.g., "users" -> "user_id")
+                    base_name = prev_segment.rstrip('s')  # Simple singularization
+                    var_name = f"{base_name}_id"
+                else:
+                    # Fallback naming
+                    if is_uuid:
+                        var_name = "resource_uuid"
+                    elif is_objectid:
+                        var_name = "resource_objectid"
+                    elif is_numeric_id:
+                        var_name = "resource_id"
+                    else:
+                        var_name = "resource_token"
+
+                # Determine ID type
+                if is_uuid:
+                    id_type = "uuid"
+                    description = f"UUID identifier (extracted from path /{prev_segment or 'resource'}/:id)"
+                elif is_objectid:
+                    id_type = "objectid"
+                    description = f"MongoDB ObjectId (extracted from path /{prev_segment or 'resource'}/:id)"
+                elif is_numeric_id:
+                    id_type = "integer"
+                    description = f"Numeric identifier (extracted from path /{prev_segment or 'resource'}/:id)"
+                else:
+                    id_type = "string"
+                    description = f"Base64 identifier (extracted from path /{prev_segment or 'resource'}/:id)"
+
+                # Add variable
+                self.add_collection_variable(
+                    key=var_name,
+                    value=part,
+                    var_type=id_type,
+                    description=description
+                )
+
+                # Replace with variable reference
+                parameterized_parts.append(f"{{{{{var_name}}}}}")
+            else:
+                parameterized_parts.append(part)
+                prev_segment = part
+
+        # Reconstruct URL
+        parameterized_path = '/'.join(parameterized_parts)
+        return urlunparse((
+            parsed.scheme,
+            parsed.netloc,
+            parameterized_path,
+            parsed.params,
+            parsed.query,
+            parsed.fragment
+        ))
+
+    def _parameterize_base_url(self, url: str) -> str:
+        """
+        Extract base URL and replace with variable.
+
+        Args:
+            url: Original URL
+
+        Returns:
+            URL with base URL replaced by {{base_url}} or {{base_url_N}}
+        """
+        parsed = urlparse(url)
+
+        # Extract base URL (scheme + netloc)
+        base_url = f"{parsed.scheme}://{parsed.netloc}"
+
+        # Create variable name
+        # If this is the first base URL, use "base_url", otherwise "base_url_2", etc.
+        var_name = "base_url"
+
+        # Check if we already have this base URL registered
+        if var_name in self.variable_registry:
+            # Check if it's the same base URL
+            if self.variable_registry[var_name]["value"] != base_url:
+                # Different base URL, need a new variable
+                counter = 2
+                while f"{var_name}_{counter}" in self.variable_registry:
+                    if self.variable_registry[f"{var_name}_{counter}"]["value"] == base_url:
+                        var_name = f"{var_name}_{counter}"
+                        break
+                    counter += 1
+                else:
+                    var_name = f"{var_name}_{counter}"
+
+        # Add variable if not already exists
+        if var_name not in self.variable_registry:
+            # Extract a clean description from the hostname
+            hostname = parsed.netloc.split(':')[0]
+            self.add_collection_variable(
+                key=var_name,
+                value=base_url,
+                var_type="string",
+                description=f"Base URL for {hostname}"
+            )
+
+        # Build parameterized URL
+        # Reconstruct with {{variable}} replacing base URL
+        path_and_query = parsed.path
+        if parsed.params:
+            path_and_query += f";{parsed.params}"
+        if parsed.query:
+            path_and_query += f"?{parsed.query}"
+        if parsed.fragment:
+            path_and_query += f"#{parsed.fragment}"
+
+        return f"{{{{{var_name}}}}}{path_and_query}"
+
+    def _detect_response_variables(self, response_body: Any, subsequent_requests: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Analyze response body to detect fields that might be used in subsequent requests.
+
+        Args:
+            response_body: Parsed response body (dict, list, or string)
+            subsequent_requests: List of subsequent request data to check for value reuse
+
+        Returns:
+            List of detected variables with extraction info:
+            [{"field": "id", "path": "$.id", "value": "12345", "var_name": "user_id", "used_in": [...]}, ...]
+        """
+        if not self.enable_response_extraction:
+            return []
+
+        if not isinstance(response_body, dict):
+            return []
+
+        detected_vars = []
+
+        def extract_fields(obj: Dict[str, Any], path_prefix: str = "$") -> None:
+            """Recursively extract fields from JSON object."""
+            for key, value in obj.items():
+                current_path = f"{path_prefix}.{key}"
+
+                # Only consider simple values (strings, numbers) that could be IDs or tokens
+                if isinstance(value, (str, int, float)) and value:
+                    # Convert to string for comparison
+                    value_str = str(value)
+
+                    # Check if this value appears in subsequent requests
+                    used_in_requests = []
+                    for idx, req_data in enumerate(subsequent_requests):
+                        req_url = req_data.get('url', '')
+                        req_headers = str(req_data.get('req_headers', {}))
+                        req_body = str(req_data.get('req_body', ''))
+
+                        # Check if value appears in URL, headers, or body
+                        if value_str in req_url or value_str in req_headers or value_str in req_body:
+                            used_in_requests.append(idx)
+
+                    # If value is reused, it's a candidate for extraction
+                    if used_in_requests:
+                        # Infer variable name from field name
+                        var_name = key
+                        if key in ['id', 'ID', '_id']:
+                            var_name = "resource_id"
+                        elif 'token' in key.lower():
+                            var_name = f"{key}_token" if not key.lower().endswith('token') else key
+                        elif 'code' in key.lower():
+                            var_name = f"{key}_code" if not key.lower().endswith('code') else key
+
+                        detected_vars.append({
+                            "field": key,
+                            "path": current_path,
+                            "value": value,
+                            "var_name": var_name.lower(),
+                            "used_in": used_in_requests
+                        })
+
+                # Recursively process nested objects (limit depth to avoid over-extraction)
+                elif isinstance(value, dict) and path_prefix.count('.') < 3:
+                    extract_fields(value, current_path)
+
+        extract_fields(response_body)
+        return detected_vars
+
+    def _generate_test_script(self, variables_to_extract: List[Dict[str, Any]]) -> str:
+        """
+        Generate Postman test script code to extract variables from response.
+
+        Args:
+            variables_to_extract: List of variables with paths and names
+
+        Returns:
+            JavaScript code for Postman test script
+        """
+        if not variables_to_extract:
+            return ""
+
+        script_lines = [
+            "// Extract variables from response",
+            "try {",
+            "    const response = pm.response.json();"
+        ]
+
+        for var_info in variables_to_extract:
+            json_path = var_info['path']
+            var_name = var_info['var_name']
+            field = var_info['field']
+
+            # Convert JSONPath to JavaScript accessor
+            # $.id → response.id
+            # $.user.id → response.user.id
+            js_accessor = json_path.replace('$', 'response')
+
+            script_lines.extend([
+                f"    ",
+                f"    // Extract {field} for use in subsequent requests",
+                f"    if ({js_accessor} !== undefined) {{",
+                f"        pm.collectionVariables.set('{var_name}', {js_accessor});",
+                f"        console.log('✓ Extracted {var_name}:', {js_accessor});",
+                f"    }}"
+            ])
+
+        script_lines.extend([
+            "} catch (e) {",
+            "    console.error('Failed to extract variables:', e);",
+            "}"
+        ])
+
+        return "\n".join(script_lines)
+
+    def analyze_captures_for_cross_request_vars(self, captures: List[Dict[str, Any]]) -> None:
+        """
+        Analyze all captures to detect cross-request variable dependencies.
+        Must be called before adding requests to enable response variable extraction.
+
+        Args:
+            captures: List of all capture dictionaries with request and response data
+        """
+        if not self.enable_response_extraction or not captures:
+            return
+
+        print(f"\n🔍 Analyzing cross-request variable flow...")
+
+        # For each capture, analyze its response against subsequent requests
+        for idx, capture in enumerate(captures):
+            response_body = capture.get('res_body', '')
+
+            # Try to parse response as JSON
+            parsed_response = None
+            if response_body and isinstance(response_body, str):
+                try:
+                    parsed_response = json.loads(response_body)
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    pass
+
+            if parsed_response:
+                # Get subsequent requests for analysis
+                subsequent_requests = captures[idx + 1:]
+
+                # Detect variables that should be extracted
+                detected_vars = self._detect_response_variables(parsed_response, subsequent_requests)
+
+                if detected_vars:
+                    # Store the variables to extract for this request index
+                    self.response_variables[idx] = detected_vars
+
+                    # Print detected variables
+                    for var in detected_vars:
+                        used_count = len(var['used_in'])
+                        print(f"  ✓ Request {idx + 1}: Extract '{var['var_name']}' (used in {used_count} subsequent request{'s' if used_count > 1 else ''})")
+
+        if self.response_variables:
+            print(f"\n✓ Found {len(self.response_variables)} requests with extractable variables")
+        else:
+            print(f"  No cross-request variable dependencies detected")
 
     def add_request(self,
                     name: str,
@@ -508,8 +931,26 @@ class PostmanCollectionBuilder:
                     headers: Optional[Dict[str, str]] = None,
                     body: Optional[Any] = None,
                     notes: Optional[List[str]] = None,
-                    expected_status: Optional[int] = None) -> None:
-        """Add a request to the collection"""
+                    expected_status: Optional[int] = None,
+                    request_index: Optional[int] = None) -> None:
+        """
+        Add a request to the collection.
+
+        Args:
+            request_index: Index of this request in the captures list (for response variable extraction)
+        """
+
+        # Parameterize path IDs in URL (must be before base URL parameterization)
+        if self.enable_path_params:
+            url = self._parameterize_path_ids(url)
+
+        # Parameterize base URL (extract scheme://host into variable)
+        if self.enable_base_url_params:
+            url = self._parameterize_base_url(url)
+
+        # Parameterize JWT tokens in headers
+        if self.enable_jwt_params and headers:
+            headers = self._parameterize_jwt_token(headers)
 
         # Build header array, excluding content-length (Postman calculates it automatically)
         header_array = []
@@ -570,6 +1011,29 @@ class PostmanCollectionBuilder:
 
         if description_parts:
             item["request"]["description"] = "\n".join(description_parts)
+
+        # Add test script if this request has response variables to extract
+        if request_index is not None and request_index in self.response_variables:
+            variables_to_extract = self.response_variables[request_index]
+            test_script = self._generate_test_script(variables_to_extract)
+
+            if test_script:
+                # Add event array with test script
+                item["event"] = [
+                    {
+                        "listen": "test",
+                        "script": {
+                            "type": "text/javascript",
+                            "exec": test_script.split('\n')
+                        }
+                    }
+                ]
+
+                # Add note about variable extraction
+                if "request" in item and "description" in item["request"]:
+                    item["request"]["description"] += f"\n\n🔄 Extracts variables: {', '.join([v['var_name'] for v in variables_to_extract])}"
+                else:
+                    item["request"]["description"] = f"🔄 Extracts variables: {', '.join([v['var_name'] for v in variables_to_extract])}"
 
         self.collection["item"].append(item)
 
@@ -664,9 +1128,8 @@ class TraceTapAI:
                 print(f"Error: Cannot generate flow without raw log data", file=sys.stderr)
                 sys.exit(1)
 
-            # Generate flow with AI
-            api_key = self.args.api_key if hasattr(self.args, 'api_key') else None
-            flow_generator = AIFlowGenerator(self.raw_log, self.args.flow_intent or "", api_key=api_key)
+            # Generate flow with AI (SECURITY: API key from environment only)
+            flow_generator = AIFlowGenerator(self.raw_log, self.args.flow_intent or "")
             flow_generator.save_flow(flow_file)
             print(f"✓ Generated flow file: {flow_file}")
             print(f"  Analyzed: {len(self.raw_log)} requests")
@@ -696,7 +1159,20 @@ class TraceTapAI:
         collection_name = self.flow_processor.get_flow_name()
         description = self.flow_processor.get_flow_description()
 
-        builder = PostmanCollectionBuilder(collection_name, description)
+        # Create builder with variable extraction settings
+        builder = PostmanCollectionBuilder(
+            collection_name,
+            description,
+            enable_variables=not getattr(self.args, 'no_variables', False),
+            enable_jwt_params=not getattr(self.args, 'no_jwt_params', False),
+            enable_path_params=not getattr(self.args, 'no_path_params', False),
+            enable_base_url_params=not getattr(self.args, 'no_base_url_params', False),
+            enable_response_extraction=not getattr(self.args, 'no_response_extraction', False)
+        )
+
+        # Analyze captures for cross-request variable flow (if raw log is available)
+        if hasattr(self, 'log_processor') and self.log_processor:
+            builder.analyze_captures_for_cross_request_vars(self.log_processor.log_entries)
 
         used_entries = set()
         matched_count = 0
@@ -789,7 +1265,19 @@ class TraceTapAI:
         collection_name = "Raw HTTP Capture"
         description = f"Captured on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
 
-        builder = PostmanCollectionBuilder(collection_name, description)
+        # Create builder with variable extraction settings
+        builder = PostmanCollectionBuilder(
+            collection_name,
+            description,
+            enable_variables=not getattr(self.args, 'no_variables', False),
+            enable_jwt_params=not getattr(self.args, 'no_jwt_params', False),
+            enable_path_params=not getattr(self.args, 'no_path_params', False),
+            enable_base_url_params=not getattr(self.args, 'no_base_url_params', False),
+            enable_response_extraction=not getattr(self.args, 'no_response_extraction', False)
+        )
+
+        # Analyze captures for cross-request variable flow
+        builder.analyze_captures_for_cross_request_vars(self.raw_log)
 
         print(f"\nProcessing {len(self.raw_log)} log entries...")
 
@@ -826,7 +1314,8 @@ class TraceTapAI:
                 url=url,
                 headers=headers,
                 body=body,
-                notes=notes
+                notes=notes,
+                request_index=idx
             )
 
         print(f"  ✓ Processed all entries")
@@ -838,7 +1327,18 @@ class TraceTapAI:
         collection_name = self.flow_processor.get_flow_name()
         description = self.flow_processor.get_flow_description()
 
-        builder = PostmanCollectionBuilder(collection_name, description)
+        # Create builder with variable extraction settings
+        builder = PostmanCollectionBuilder(
+            collection_name,
+            description,
+            enable_variables=not getattr(self.args, 'no_variables', False),
+            enable_jwt_params=not getattr(self.args, 'no_jwt_params', False),
+            enable_path_params=not getattr(self.args, 'no_path_params', False),
+            enable_base_url_params=not getattr(self.args, 'no_base_url_params', False),
+            enable_response_extraction=not getattr(self.args, 'no_response_extraction', False)
+        )
+
+        # Note: No cross-request analysis for flow-only mode (no raw logs available)
 
         print(f"\nGenerating Postman collection from flow YAML...")
         print(f"  Mode: Flow-only (no raw logs)")
@@ -1002,9 +1502,26 @@ Examples:
                         type=str,
                         help='Match flow YAML with raw logs and generate Postman collection (strict matching by default)')
 
-    parser.add_argument('--api-key',
-                        type=str,
-                        help='Anthropic API key for AI-powered flow generation (or set ANTHROPIC_API_KEY env var)')
+    # Variable extraction flags
+    parser.add_argument('--no-variables',
+                        action='store_true',
+                        help='Disable all variable extraction and parameterization')
+
+    parser.add_argument('--no-jwt-params',
+                        action='store_true',
+                        help='Disable JWT token parameterization in Authorization headers')
+
+    parser.add_argument('--no-path-params',
+                        action='store_true',
+                        help='Disable path ID parameterization (UUIDs, numeric IDs, ObjectIds)')
+
+    parser.add_argument('--no-base-url-params',
+                        action='store_true',
+                        help='Disable base URL parameterization')
+
+    parser.add_argument('--no-response-extraction',
+                        action='store_true',
+                        help='Disable response variable extraction and test script generation')
 
     parser.add_argument('-o', '--output',
                         type=str,

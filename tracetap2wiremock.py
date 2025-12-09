@@ -14,6 +14,11 @@ from typing import Dict, Any, List, Optional
 from urllib.parse import urlparse
 import hashlib
 
+# Add src to path for imports
+sys.path.insert(0, str(Path(__file__).parent / 'src'))
+
+from tracetap.common import safe_json_parse, get_api_key_from_env
+
 try:
     import anthropic
 
@@ -25,7 +30,13 @@ except ImportError:
 class AIWireMockGenerator:
     """Generate intelligent WireMock stubs using Claude AI"""
 
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self):
+        """
+        Initialize AI WireMock generator.
+
+        Note:
+            SECURITY: API key must be set via ANTHROPIC_API_KEY environment variable.
+        """
         self.client = None
         self.ai_available = False
 
@@ -34,15 +45,16 @@ class AIWireMockGenerator:
             print("  Install: pip install anthropic")
             return
 
-        actual_api_key = api_key or os.environ.get('ANTHROPIC_API_KEY')
-        if not actual_api_key:
+        # SECURITY: Get API key from environment only (never accept via CLI)
+        api_key = get_api_key_from_env()
+        if not api_key:
             print("⚠ Claude AI not available: ANTHROPIC_API_KEY not set")
             print("  Set: export ANTHROPIC_API_KEY=your_key")
             print("  Get key: https://console.anthropic.com/")
             return
 
         try:
-            self.client = anthropic.Anthropic(api_key=actual_api_key)
+            self.client = anthropic.Anthropic(api_key=api_key)
             self.ai_available = True
             print("✓ Claude AI enabled")
         except Exception as e:
@@ -279,11 +291,9 @@ Focus on making stubs reusable and maintainable."""
         if body_pattern:
             request["bodyPatterns"] = [{"matches": body_pattern}]
         elif capture.get("request_body"):
-            try:
-                body = json.loads(capture["request_body"])
+            body = safe_json_parse(capture["request_body"])
+            if body is not None:
                 request["bodyPatterns"] = [{"equalToJson": json.dumps(body)}]
-            except (json.JSONDecodeError, TypeError, ValueError):
-                pass
 
         return request
 
@@ -303,10 +313,7 @@ Focus on making stubs reusable and maintainable."""
         # Response body
         resp_body = ai_stub.get("response_body")
         if not resp_body and capture.get("response_body"):
-            try:
-                resp_body = json.loads(capture["response_body"])
-            except (json.JSONDecodeError, TypeError, ValueError):
-                resp_body = capture["response_body"]
+            resp_body = safe_json_parse(capture["response_body"], default=capture["response_body"])
 
         if resp_body:
             if isinstance(resp_body, dict):
@@ -334,10 +341,10 @@ Focus on making stubs reusable and maintainable."""
 
             # Add response body if present
             if capture.get("response_body"):
-                try:
-                    body = json.loads(capture["response_body"])
+                body = safe_json_parse(capture["response_body"])
+                if body is not None:
                     stub["response"]["jsonBody"] = body
-                except (json.JSONDecodeError, TypeError, ValueError):
+                else:
                     stub["response"]["body"] = capture["response_body"]
 
             # Add response headers

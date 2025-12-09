@@ -1,0 +1,35 @@
+# TraceTap Replay & Mock Server Dependencies
+#
+# Install with: pip install -r requirements-replay.txt
+#
+# This includes dependencies for:
+# - Traffic replay functionality
+# - Mock HTTP server
+# - AI-powered variable extraction and scenario generation
+# - Request matching and response generation
+
+# Core HTTP client (for replay)
+requests>=2.31.0
+
+# FastAPI and ASGI server (for mock server)
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+
+# YAML support (for scenario configuration)
+pyyaml>=6.0
+
+# JSONPath support (for response extraction)
+jsonpath-ng>=1.6.0
+
+# Claude AI integration (optional but recommended)
+anthropic>=0.7.0
+
+# Testing support (for generated tests)
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+
+# Additional utilities
+python-dateutil>=2.8.2
+
+# Faker for realistic mock data generation
+faker>=20.0.0

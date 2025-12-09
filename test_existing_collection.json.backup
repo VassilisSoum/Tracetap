@@ -1,0 +1,104 @@
+{
+  "info": {
+    "name": "My API Collection",
+    "description": "Production API collection with custom test scripts",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://api.example.com",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Login User",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/auth/login",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"username\": \"{{username}}\", \"password\": \"{{password}}\"}"
+        },
+        "description": "Authenticates user and returns JWT token.\n\nCustom note: This endpoint is critical for auth flow."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status is 200', function() {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "const response = pm.response.json();",
+              "pm.collectionVariables.set('auth_token', response.token);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Get User Profile",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/users/123",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{auth_token}}"
+          },
+          {
+            "key": "X-Custom-Header",
+            "value": "my-custom-value"
+          }
+        ],
+        "description": "Fetches current user profile.\n\nMy custom documentation here."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('User has email', function() {",
+              "  const user = pm.response.json();",
+              "  pm.expect(user.email).to.exist;",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Update User",
+      "request": {
+        "method": "PUT",
+        "url": "{{base_url}}/users/123",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{auth_token}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"name\": \"{{new_name}}\", \"email\": \"{{new_email}}\"}"
+        }
+      }
+    },
+    {
+      "name": "Delete Old Endpoint",
+      "request": {
+        "method": "DELETE",
+        "url": "{{base_url}}/legacy/old-endpoint"
+      }
+    }
+  ]
+}

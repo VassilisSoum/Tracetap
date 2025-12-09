@@ -1,0 +1,54 @@
+[
+  {
+    "method": "POST",
+    "url": "https://api.example.com/auth/login",
+    "req_headers": {
+      "Content-Type": "application/json",
+      "User-Agent": "PostmanRuntime/7.26.8"
+    },
+    "req_body": "{\"username\":\"testuser\",\"password\":\"secret\"}",
+    "status": 200,
+    "res_body": "{\"token\":\"new-jwt-token-here\",\"expires_in\":3600}"
+  },
+  {
+    "method": "GET",
+    "url": "https://api.example.com/users/456",
+    "req_headers": {
+      "Authorization": "Bearer new-token",
+      "Content-Type": "application/json"
+    },
+    "status": 200,
+    "res_body": "{\"id\":456,\"name\":\"John Doe\",\"email\":\"john@example.com\"}"
+  },
+  {
+    "method": "PUT",
+    "url": "https://api.example.com/users/456",
+    "req_headers": {
+      "Authorization": "Bearer new-token",
+      "Content-Type": "application/json"
+    },
+    "req_body": "{\"name\":\"Jane Doe\",\"email\":\"jane@example.com\"}",
+    "status": 200,
+    "res_body": "{\"id\":456,\"name\":\"Jane Doe\",\"email\":\"jane@example.com\"}"
+  },
+  {
+    "method": "GET",
+    "url": "https://api.example.com/products",
+    "req_headers": {
+      "Authorization": "Bearer new-token"
+    },
+    "status": 200,
+    "res_body": "[{\"id\":1,\"name\":\"Product A\"},{\"id\":2,\"name\":\"Product B\"}]"
+  },
+  {
+    "method": "POST",
+    "url": "https://api.example.com/orders",
+    "req_headers": {
+      "Authorization": "Bearer new-token",
+      "Content-Type": "application/json"
+    },
+    "req_body": "{\"product_id\":1,\"quantity\":2}",
+    "status": 201,
+    "res_body": "{\"order_id\":\"ORD-123\",\"status\":\"pending\"}"
+  }
+]

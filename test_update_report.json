@@ -1,0 +1,60 @@
+{
+  "timestamp": "2025-12-09T13:26:29.988469",
+  "summary": {
+    "existing_requests": 4,
+    "matched_requests": 3,
+    "match_rate": 0.75,
+    "updated_requests": 3,
+    "new_requests": 2,
+    "removed_requests": 1
+  },
+  "changes": {
+    "total": 9,
+    "by_type": {
+      "url": 3,
+      "headers (1 updated, 1 added)": 3,
+      "response_example": 3
+    }
+  },
+  "preserved": {
+    "total": 10,
+    "items": [
+      "description",
+      "test_scripts",
+      "body_variables",
+      "name",
+      "custom_headers (1)"
+    ]
+  },
+  "warnings": [],
+  "match_details": [
+    {
+      "name": "Login User",
+      "matched": true,
+      "confidence": 1.0,
+      "match_type": "exact",
+      "reason": "Exact method + URL match"
+    },
+    {
+      "name": "Get User Profile",
+      "matched": true,
+      "confidence": 0.85,
+      "match_type": "pattern",
+      "reason": "Method + normalized URL pattern match"
+    },
+    {
+      "name": "Update User",
+      "matched": true,
+      "confidence": 0.85,
+      "match_type": "pattern",
+      "reason": "Method + normalized URL pattern match"
+    },
+    {
+      "name": "Delete Old Endpoint",
+      "matched": false,
+      "confidence": 0.0,
+      "match_type": "none",
+      "reason": "No match found (best score: 28%)"
+    }
+  ]
+}
