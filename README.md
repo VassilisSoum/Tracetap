@@ -326,7 +326,7 @@ pip install -r requirements.txt
 ```
 
 **Required Packages:**
-- `mitmproxy>=10.0.0,<11.0.0` - HTTP proxy framework
+- `mitmproxy>=8.0.0,<9.0.0` - HTTP proxy framework
 - `anthropic>=0.71.0` - Claude AI API client (for AI features)
 - `PyYAML>=6.0` - YAML parsing for flow specs
 - `typing-extensions>=4.3,<=4.11.0` - Type hints compatibility
