@@ -1,0 +1,140 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tracetap"
+version = "1.0.0"
+authors = [
+    {name = "Vassilis Soumakis"}
+]
+description = "HTTP/HTTPS traffic capture proxy with AI-powered API analysis and testing tools"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.8"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Testing",
+    "Topic :: Internet :: Proxy Servers",
+    "Topic :: Software Development :: Quality Assurance",
+]
+keywords = ["proxy", "http", "api", "testing", "postman", "wiremock", "playwright", "mitmproxy", "ai"]
+
+dependencies = [
+    "mitmproxy>=10.0.0,<11.0.0",
+    "anthropic>=0.71.0",
+    "PyYAML>=6.0",
+    "typing-extensions>=4.3,<=4.11.0",
+]
+
+[project.optional-dependencies]
+replay = [
+    "requests>=2.31.0",
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "jsonpath-ng>=1.6.0",
+    "faker>=20.0.0",
+]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
+    "pytest-timeout>=2.1.0",
+    "black>=23.0.0",
+    "flake8>=6.0.0",
+    "mypy>=1.5.0",
+    "pylint>=2.17.0",
+    "types-PyYAML",
+    "types-requests",
+]
+all = [
+    "tracetap[replay,dev]",
+]
+
+[project.urls]
+Homepage = "https://github.com/VassilisSoum/tracetap"
+Repository = "https://github.com/VassilisSoum/tracetap"
+Documentation = "https://github.com/VassilisSoum/tracetap#readme"
+"Bug Tracker" = "https://github.com/VassilisSoum/tracetap/issues"
+
+[project.scripts]
+tracetap = "tracetap:main"
+tracetap-ai-postman = "tracetap_ai_postman:main"
+tracetap-replay = "tracetap_replay:main"
+tracetap-playwright = "tracetap_playwright:main"
+tracetap2wiremock = "tracetap2wiremock:main"
+tracetap-update-collection = "tracetap_update_collection:main"
+
+[tool.setuptools]
+packages = ["src.tracetap"]
+package-dir = {"" = "."}
+
+[tool.setuptools.package-data]
+tracetap = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--strict-markers",
+    "--tb=short",
+    "--cov=src",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+    "--cov-report=xml",
+]
+
+[tool.black]
+line-length = 100
+target-version = ['py38', 'py39', 'py310', 'py311', 'py312']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+    "*/site-packages/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
