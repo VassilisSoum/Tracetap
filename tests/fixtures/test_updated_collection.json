@@ -1,0 +1,204 @@
+{
+  "info": {
+    "name": "My API Collection",
+    "description": "Production API collection with custom test scripts",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://api.example.com",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Login User",
+      "request": {
+        "method": "POST",
+        "url": "https://api.example.com/auth/login",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "disabled": false,
+            "type": "text"
+          },
+          {
+            "key": "User-Agent",
+            "value": "PostmanRuntime/7.26.8",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"username\": \"{{username}}\", \"password\": \"{{password}}\"}"
+        },
+        "description": "Authenticates user and returns JWT token.\n\nCustom note: This endpoint is critical for auth flow."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status is 200', function() {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "const response = pm.response.json();",
+              "pm.collectionVariables.set('auth_token', response.token);"
+            ]
+          }
+        }
+      ],
+      "response": [
+        {
+          "name": "Example Response (200)",
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [],
+          "body": "{\"token\":\"new-jwt-token-here\",\"expires_in\":3600}"
+        }
+      ]
+    },
+    {
+      "name": "Get User Profile",
+      "request": {
+        "method": "GET",
+        "url": "https://api.example.com/users/456",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer new-token",
+            "disabled": false,
+            "type": "text"
+          },
+          {
+            "key": "X-Custom-Header",
+            "value": "my-custom-value"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "description": "Fetches current user profile.\n\nMy custom documentation here."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('User has email', function() {",
+              "  const user = pm.response.json();",
+              "  pm.expect(user.email).to.exist;",
+              "});"
+            ]
+          }
+        }
+      ],
+      "response": [
+        {
+          "name": "Example Response (200)",
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [],
+          "body": "{\"id\":456,\"name\":\"John Doe\",\"email\":\"john@example.com\"}"
+        }
+      ]
+    },
+    {
+      "name": "Update User",
+      "request": {
+        "method": "PUT",
+        "url": "https://api.example.com/users/456",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer new-token",
+            "disabled": false,
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"name\": \"{{new_name}}\", \"email\": \"{{new_email}}\"}"
+        }
+      },
+      "response": [
+        {
+          "name": "Example Response (200)",
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [],
+          "body": "{\"id\":456,\"name\":\"Jane Doe\",\"email\":\"jane@example.com\"}"
+        }
+      ]
+    },
+    {
+      "name": "\u26a0\ufe0f DEPRECATED: Delete Old Endpoint",
+      "request": {
+        "method": "DELETE",
+        "url": "{{base_url}}/legacy/old-endpoint",
+        "description": "\n\n\u26a0\ufe0f DEPRECATED: Not found in captures since 2025-12-09\n"
+      }
+    },
+    {
+      "name": "New Captures - 2025-12-09",
+      "item": [
+        {
+          "name": "1. GET products",
+          "request": {
+            "method": "GET",
+            "url": "https://api.example.com/products",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer new-token",
+                "type": "text"
+              }
+            ]
+          }
+        },
+        {
+          "name": "2. POST orders",
+          "request": {
+            "method": "POST",
+            "url": "https://api.example.com/orders",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer new-token",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product_id\": 1,\n  \"quantity\": 2\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "description": "Requests captured on 2025-12-09 that were not found in the existing collection."
+    }
+  ]
+}
