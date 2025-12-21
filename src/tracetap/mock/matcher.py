@@ -21,11 +21,8 @@ from dataclasses import dataclass, field
 from urllib.parse import urlparse, parse_qs
 from difflib import SequenceMatcher
 
-try:
-    import anthropic
-    ANTHROPIC_AVAILABLE = True
-except ImportError:
-    ANTHROPIC_AVAILABLE = False
+# Import common utilities for AI client and header filtering
+from ..common import create_anthropic_client, ANTHROPIC_AVAILABLE, filter_interesting_headers
 
 
 @dataclass
@@ -38,11 +35,6 @@ class MatchScore:
     header_score: float = 0.0
     body_score: float = 0.0
     method_match: bool = False
-
-    @property
-    def is_good_match(self) -> bool:
-        """Determine if this is a good enough match (>= 0.7)."""
-        return self.total_score >= 0.7
 
 
 @dataclass
@@ -124,13 +116,14 @@ class RequestMatcher:
         self.cache_hits = 0
         self.cache_misses = 0
 
-        # Initialize Claude client for semantic matching
+        # Initialize Claude client for semantic matching using centralized utility
         self.client = None
         if strategy == 'semantic' and ANTHROPIC_AVAILABLE:
-            import os
-            actual_api_key = api_key or os.environ.get('ANTHROPIC_API_KEY')
-            if actual_api_key:
-                self.client = anthropic.Anthropic(api_key=actual_api_key)
+            self.client, _, _ = create_anthropic_client(
+                api_key=api_key,
+                raise_on_error=False,
+                verbose=False
+            )
 
         # Build index for faster matching
         self._build_index()
@@ -849,7 +842,7 @@ If no good semantic match exists, respond with "NONE".
         query = parsed.query
 
         # Extract key headers
-        relevant_headers = self._filter_interesting_headers(headers)
+        relevant_headers = filter_interesting_headers(headers)
 
         # Format body
         body_str = ""
@@ -936,14 +929,3 @@ Body: {body_str if body_str else "(empty)"}"""
             formatted_captures.append(formatted)
 
         return "\n\n".join(formatted_captures)
-
-    def _filter_interesting_headers(self, headers: Dict[str, str]) -> Dict[str, str]:
-        """Filter headers to only include interesting ones for matching."""
-        interesting = [
-            'content-type', 'authorization', 'accept',
-            'x-api-key', 'x-auth-token', 'x-requested-with'
-        ]
-        return {
-            k: v for k, v in headers.items()
-            if k.lower() in interesting
-        }

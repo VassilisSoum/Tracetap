@@ -14,11 +14,8 @@ from dataclasses import dataclass, field
 import yaml
 from textwrap import dedent
 
-try:
-    import anthropic
-    ANTHROPIC_AVAILABLE = True
-except ImportError:
-    ANTHROPIC_AVAILABLE = False
+# Import common utilities for AI client
+from ..common import create_anthropic_client, ANTHROPIC_AVAILABLE
 
 try:
     import jsonpath_ng
@@ -356,21 +353,12 @@ class AIScenarioGenerator:
 
     def __init__(self, api_key: Optional[str] = None):
         """Initialize AI generator."""
-        self.client = None
-        self.ai_available = False
-
-        if not ANTHROPIC_AVAILABLE:
-            return
-
-        actual_api_key = api_key or os.environ.get('ANTHROPIC_API_KEY')
-        if not actual_api_key:
-            return
-
-        try:
-            self.client = anthropic.Anthropic(api_key=actual_api_key)
-            self.ai_available = True
-        except Exception:
-            pass
+        # Use centralized AI client initialization
+        self.client, self.ai_available, _ = create_anthropic_client(
+            api_key=api_key,
+            raise_on_error=False,
+            verbose=False
+        )
 
     def generate_scenario(
         self,

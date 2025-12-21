@@ -99,11 +99,11 @@ class TestResponseGenerator:
         assert generator.use_ai is False
         assert generator.client is None
 
-    @patch('src.tracetap.mock.generator.anthropic.Anthropic')
-    def test_generator_initialization_with_ai(self, mock_anthropic):
+    @patch('src.tracetap.common.ai_utils.create_anthropic_client')
+    def test_generator_initialization_with_ai(self, mock_create_client):
         """Test initializing generator with AI."""
         mock_client = Mock()
-        mock_anthropic.return_value = mock_client
+        mock_create_client.return_value = (mock_client, True, "AI enabled")
 
         generator = ResponseGenerator(use_ai=True, api_key='test-key')
 
@@ -137,6 +137,7 @@ class TestResponseGenerator:
         assert '999' in response['resp_body']
         assert 'Test User' in response['resp_body']
 
+    @pytest.mark.skip(reason="add_transformer method removed as dead code")
     def test_generate_transformed(self, sample_capture):
         """Test response generation with transformers."""
         generator = ResponseGenerator()
@@ -152,8 +153,7 @@ class TestResponseGenerator:
 
         assert response['resp_headers']['X-Transformed'] == 'true'
 
-    @patch('src.tracetap.mock.generator.anthropic.Anthropic')
-    def test_generate_ai_success(self, mock_anthropic, sample_capture):
+    def test_generate_ai_success(self, sample_capture):
         """Test AI-powered response generation."""
         # Mock Claude response
         mock_response = Mock()
@@ -161,9 +161,11 @@ class TestResponseGenerator:
 
         mock_client = Mock()
         mock_client.messages.create.return_value = mock_response
-        mock_anthropic.return_value = mock_client
 
-        generator = ResponseGenerator(use_ai=True, api_key='test-key')
+        generator = ResponseGenerator(use_ai=False, api_key='test-key')
+        # Manually set AI attributes to bypass ANTHROPIC_AVAILABLE check
+        generator.use_ai = True
+        generator.client = mock_client
 
         context = {
             'method': 'GET',
@@ -253,6 +255,7 @@ class TestResponseTemplates:
 class TestResponseSequences:
     """Test sequential response generation."""
 
+    @pytest.mark.skip(reason="create_sequence and get_next_from_sequence methods removed as dead code")
     def test_create_sequence(self):
         """Test creating response sequence."""
         generator = ResponseGenerator()
@@ -267,6 +270,7 @@ class TestResponseSequences:
 
         assert 'test_seq' in generator.sequences
 
+    @pytest.mark.skip(reason="create_sequence and get_next_from_sequence methods removed as dead code")
     def test_get_next_from_sequence(self):
         """Test getting next response from sequence."""
         generator = ResponseGenerator()
@@ -290,6 +294,7 @@ class TestResponseSequences:
         resp3 = generator.get_next_from_sequence('test_seq')
         assert resp3['resp_body'] == 'First'
 
+    @pytest.mark.skip(reason="create_sequence and get_next_from_sequence methods removed as dead code")
     def test_get_next_from_missing_sequence(self):
         """Test getting from non-existent sequence."""
         generator = ResponseGenerator()
@@ -302,17 +307,18 @@ class TestResponseSequences:
 class TestIntelligentGeneration:
     """Test intelligent response generation."""
 
-    @patch('src.tracetap.mock.generator.anthropic.Anthropic')
-    def test_generate_intelligent_uses_ai(self, mock_anthropic, sample_capture):
+    def test_generate_intelligent_uses_ai(self, sample_capture):
         """Test intelligent generation uses AI when available."""
         mock_response = Mock()
         mock_response.content = [Mock(text='{"id": 123}')]
 
         mock_client = Mock()
         mock_client.messages.create.return_value = mock_response
-        mock_anthropic.return_value = mock_client
 
-        generator = ResponseGenerator(use_ai=True, api_key='test-key')
+        generator = ResponseGenerator(use_ai=False, api_key='test-key')
+        # Manually set AI attributes to bypass ANTHROPIC_AVAILABLE check
+        generator.use_ai = True
+        generator.client = mock_client
 
         context = {
             'method': 'GET',
@@ -418,6 +424,7 @@ class TestTransformerFunctions:
 class TestTransformerChaining:
     """Test chaining multiple transformers."""
 
+    @pytest.mark.skip(reason="add_transformer method removed as dead code")
     def test_multiple_transformers(self):
         """Test applying multiple transformers in sequence."""
         generator = ResponseGenerator()
@@ -445,6 +452,7 @@ class TestTransformerChaining:
 class TestCustomTransformers:
     """Test custom transformer functions."""
 
+    @pytest.mark.skip(reason="add_transformer method removed as dead code")
     def test_custom_transformer(self):
         """Test adding and using custom transformer."""
         generator = ResponseGenerator()
@@ -466,6 +474,7 @@ class TestCustomTransformers:
 
         assert transformed['resp_headers']['X-Custom'] == 'custom-value'
 
+    @pytest.mark.skip(reason="add_transformer method removed as dead code")
     def test_transformer_with_context(self):
         """Test transformer using context."""
         generator = ResponseGenerator()

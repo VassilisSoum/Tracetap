@@ -10,6 +10,7 @@ Tests the AI-powered variable extraction functionality including:
 
 import pytest
 import json
+from dataclasses import asdict
 from unittest.mock import Mock, patch, MagicMock
 
 from src.tracetap.replay.variables import (
@@ -79,7 +80,7 @@ class TestVariable:
             locations=['header']
         )
 
-        data = var.to_dict()
+        data = asdict(var)
 
         assert data['name'] == 'token'
         assert data['type'] == 'jwt'
@@ -101,11 +102,11 @@ class TestVariableExtractor:
         assert len(extractor.captures) == 3
 
     @patch.dict('os.environ', {'ANTHROPIC_API_KEY': 'test-key'})
-    @patch('src.tracetap.replay.variables.anthropic.Anthropic')
-    def test_extractor_initialization_with_ai(self, mock_anthropic, sample_captures):
+    @patch('src.tracetap.common.ai_utils.create_anthropic_client')
+    def test_extractor_initialization_with_ai(self, mock_create_client, sample_captures):
         """Test initializing extractor with AI."""
         mock_client = Mock()
-        mock_anthropic.return_value = mock_client
+        mock_create_client.return_value = (mock_client, True, "AI enabled")
 
         extractor = VariableExtractor(
             captures=sample_captures,
@@ -172,8 +173,7 @@ class TestVariableExtractor:
         # Timestamp extraction depends on sampling, so we just verify the method works
         assert isinstance(timestamp_vars, list)
 
-    @patch('src.tracetap.replay.variables.anthropic.Anthropic')
-    def test_extract_with_ai_success(self, mock_anthropic, sample_captures):
+    def test_extract_with_ai_success(self, sample_captures):
         """Test extracting variables with AI successfully."""
         # Mock Claude response (properly formatted JSON)
         mock_json = json.dumps([
@@ -200,13 +200,15 @@ class TestVariableExtractor:
 
         mock_client = Mock()
         mock_client.messages.create.return_value = mock_response
-        mock_anthropic.return_value = mock_client
 
         extractor = VariableExtractor(
             captures=sample_captures,
             api_key='test-key',
-            use_ai=True
+            use_ai=False
         )
+        # Manually set AI attributes to bypass ANTHROPIC_AVAILABLE check
+        extractor.use_ai = True
+        extractor.client = mock_client
 
         variables = extractor.extract_variables()
 
@@ -214,13 +216,13 @@ class TestVariableExtractor:
         assert variables[0].name == 'user_id'
         assert variables[1].name == 'auth_token'
 
-    @patch('src.tracetap.replay.variables.anthropic.Anthropic')
-    def test_extract_with_ai_fallback_on_error(self, mock_anthropic, sample_captures):
+    @patch('src.tracetap.common.ai_utils.create_anthropic_client')
+    def test_extract_with_ai_fallback_on_error(self, mock_create_client, sample_captures):
         """Test fallback to regex when AI fails."""
         # Mock Claude to raise exception
         mock_client = Mock()
         mock_client.messages.create.side_effect = Exception('API Error')
-        mock_anthropic.return_value = mock_client
+        mock_create_client.return_value = (mock_client, True, "AI enabled")
 
         extractor = VariableExtractor(
             captures=sample_captures,
@@ -236,10 +238,7 @@ class TestVariableExtractor:
 
     def test_filter_interesting_headers(self, sample_captures):
         """Test filtering interesting headers."""
-        extractor = VariableExtractor(
-            captures=sample_captures,
-            use_ai=False
-        )
+        from src.tracetap.common import filter_interesting_headers
 
         headers = {
             'Authorization': 'Bearer token',
@@ -249,7 +248,7 @@ class TestVariableExtractor:
             'X-Custom-Header': 'value'
         }
 
-        filtered = extractor._filter_interesting_headers(headers)
+        filtered = filter_interesting_headers(headers)
 
         # Should include authorization and content-type
         assert 'Authorization' in filtered or 'authorization' in filtered

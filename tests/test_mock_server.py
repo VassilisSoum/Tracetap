@@ -609,5 +609,165 @@ class TestDiffTracking:
         assert clear_response.json()['status'] == 'cleared'
 
 
+class TestTemplateModeIntegration:
+    """Test template mode with context extraction."""
+
+    def test_template_mode_with_query_params(self):
+        """Test template mode extracts and uses query parameters."""
+        # Create capture with template variables and same query params
+        captures = [{
+            'method': 'GET',
+            'url': 'http://testserver/users?name=Alice&age=25',  # Exact URL for matching
+            'status': 200,
+            'resp_headers': {'Content-Type': 'application/json'},
+            'resp_body': '{"name": "{{name}}", "age": {{age}}}'  # Template uses extracted values
+        }]
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump({'requests': captures}, f)
+            temp_file = f.name
+
+        try:
+            config = MockConfig(
+                response_mode='template',
+                matching_strategy='exact'  # Use exact matching
+            )
+            server = MockServer(temp_file, config=config)
+            client = TestClient(server.app)
+
+            # Request with same query parameters - will be extracted and substituted
+            response = client.get('/users?name=Alice&age=25')
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data['name'] == 'Alice'
+            assert data['age'] == 25  # Template substitutes as number (no quotes in template)
+        finally:
+            Path(temp_file).unlink()
+
+    def test_template_mode_with_path_params(self):
+        """Test template mode extracts and uses path parameters."""
+        # Create capture with ID in both URL and body template
+        captures = [{
+            'method': 'GET',
+            'url': 'http://testserver/users/123',  # Match TestClient URL
+            'status': 200,
+            'resp_headers': {'Content-Type': 'application/json'},
+            'resp_body': '{"id": {{id}}, "name": "User {{id}}"}'
+        }]
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump({'requests': captures}, f)
+            temp_file = f.name
+
+        try:
+            config = MockConfig(response_mode='template', matching_strategy='exact')
+            server = MockServer(temp_file, config=config)
+            client = TestClient(server.app)
+
+            # Request with same ID in path (template will extract it)
+            response = client.get('/users/123')
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data['id'] == 123  # Template substitutes without quotes -> parsed as int
+            assert data['name'] == 'User 123'  # Template substitution
+        finally:
+            Path(temp_file).unlink()
+
+    def test_template_mode_with_json_body(self):
+        """Test template mode extracts and uses JSON body fields."""
+        # Create capture with template that uses body fields
+        captures = [{
+            'method': 'POST',
+            'url': 'http://testserver/users',  # Match TestClient URL
+            'req_body': '{"name": "Test"}',
+            'status': 201,
+            'resp_headers': {'Content-Type': 'application/json'},
+            'resp_body': '{"id": 789, "name": "{{name}}", "email": "{{email}}"}'
+        }]
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump({'requests': captures}, f)
+            temp_file = f.name
+
+        try:
+            config = MockConfig(response_mode='template', matching_strategy='fuzzy')
+            server = MockServer(temp_file, config=config)
+            client = TestClient(server.app)
+
+            # POST with JSON body
+            response = client.post('/users', json={'name': 'Bob', 'email': 'bob@example.com'})
+
+            assert response.status_code == 201
+            data = response.json()
+            assert data['id'] == 789  # Static value
+            assert data['name'] == 'Bob'  # From body
+            assert data['email'] == 'bob@example.com'  # From body
+        finally:
+            Path(temp_file).unlink()
+
+    def test_template_mode_mixed_context(self):
+        """Test template mode with query, path, and body parameters."""
+        captures = [{
+            'method': 'POST',
+            'url': 'http://testserver/users/123/posts?status=draft',  # Include query param for matching
+            'status': 201,
+            'resp_headers': {'Content-Type': 'application/json'},
+            'resp_body': '{"user_id": {{id}}, "title": "{{title}}", "status": "{{status}}"}'
+        }]
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump({'requests': captures}, f)
+            temp_file = f.name
+
+        try:
+            config = MockConfig(response_mode='template', matching_strategy='exact')
+            server = MockServer(temp_file, config=config)
+            client = TestClient(server.app)
+
+            # Request with path ID, query param, and body (matching capture URL)
+            response = client.post(
+                '/users/123/posts?status=draft',
+                json={'title': 'My Post'}
+            )
+
+            assert response.status_code == 201
+            data = response.json()
+            assert data['user_id'] == 123  # From path (template without quotes -> int)
+            assert data['title'] == 'My Post'  # From body
+            assert data['status'] == 'draft'  # From query
+        finally:
+            Path(temp_file).unlink()
+
+    def test_static_mode_ignores_templates(self):
+        """Test that static mode doesn't process template variables."""
+        captures = [{
+            'method': 'GET',
+            'url': 'http://testserver/users',  # Match TestClient URL
+            'status': 200,
+            'resp_headers': {'Content-Type': 'application/json'},
+            'resp_body': '{"name": "{{name}}"}'  # Template variable in capture
+        }]
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump({'requests': captures}, f)
+            temp_file = f.name
+
+        try:
+            config = MockConfig(response_mode='static', matching_strategy='exact')  # Static mode
+            server = MockServer(temp_file, config=config)
+            client = TestClient(server.app)
+
+            # Request matching capture (no substitution in static mode)
+            response = client.get('/users')
+
+            assert response.status_code == 200
+            # Static mode returns template variables as-is (not substituted)
+            assert '{{name}}' in response.text
+        finally:
+            Path(temp_file).unlink()
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

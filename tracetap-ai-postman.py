@@ -33,83 +33,53 @@ except ImportError:
     VARIABLE_EXTRACTOR_AVAILABLE = False
     print("Warning: VariableExtractor not available. Variable detection will be disabled.")
 
-# Import common utilities for secure API key handling
+# Import common utilities for secure API key handling and URL operations
 try:
-    from src.tracetap.common import get_api_key_from_env
+    from src.tracetap.common import create_anthropic_client, URLMatcher
 except ImportError:
     # Fallback if common module not available
-    def get_api_key_from_env():
-        return os.environ.get('ANTHROPIC_API_KEY')
+    def create_anthropic_client(raise_on_error=False, verbose=False):
+        import os
+        api_key = os.environ.get('ANTHROPIC_API_KEY')
+        if api_key:
+            try:
+                import anthropic
+                return anthropic.Anthropic(api_key=api_key), True, "AI enabled"
+            except:
+                return None, False, "AI init failed"
+        return None, False, "No API key"
 
+    # Fallback URLMatcher if common module not available
+    class URLMatcher:
+        """Handles URL matching logic with various strategies"""
 
-class URLMatcher:
-    """Handles URL matching logic with various strategies"""
+        @staticmethod
+        def normalize_url(url: str, strip_query: bool = False) -> str:
+            """Normalize URL for comparison"""
+            parsed = urlparse(url)
+            if strip_query:
+                return urlunparse((parsed.scheme, parsed.netloc, parsed.path, '', '', ''))
+            query_dict = parse_qs(parsed.query)
+            sorted_query = urlencode(sorted(query_dict.items()), doseq=True)
+            return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, sorted_query, ''))
 
-    @staticmethod
-    def normalize_url(url: str, strip_query: bool = False) -> str:
-        """Normalize URL for comparison"""
-        parsed = urlparse(url)
+        @staticmethod
+        def urls_match(url1: str, url2: str, strict: bool = False) -> bool:
+            if url1 == url2:
+                return True
+            norm1 = URLMatcher.normalize_url(url1, strip_query=not strict)
+            norm2 = URLMatcher.normalize_url(url2, strip_query=not strict)
+            if norm1 == norm2:
+                return True
+            if not strict:
+                norm1_no_query = URLMatcher.normalize_url(url1, strip_query=True)
+                norm2_no_query = URLMatcher.normalize_url(url2, strip_query=True)
+                return norm1_no_query == norm2_no_query
+            return False
 
-        if strip_query:
-            # Remove query parameters
-            return urlunparse((
-                parsed.scheme,
-                parsed.netloc,
-                parsed.path,
-                '',
-                '',
-                ''
-            ))
-
-        # Sort query parameters for consistent comparison
-        query_dict = parse_qs(parsed.query)
-        sorted_query = urlencode(sorted(query_dict.items()), doseq=True)
-
-        return urlunparse((
-            parsed.scheme,
-            parsed.netloc,
-            parsed.path,
-            parsed.params,
-            sorted_query,
-            ''  # Remove fragment
-        ))
-
-    @staticmethod
-    def urls_match(url1: str, url2: str, strict: bool = False) -> bool:
-        """
-        Compare two URLs for matching
-
-        Args:
-            url1: First URL
-            url2: Second URL
-            strict: If True, requires exact match including query params
-
-        Returns:
-            True if URLs match according to criteria
-        """
-        # Exact match first
-        if url1 == url2:
-            return True
-
-        # Normalize and compare
-        norm1 = URLMatcher.normalize_url(url1, strip_query=not strict)
-        norm2 = URLMatcher.normalize_url(url2, strip_query=not strict)
-
-        if norm1 == norm2:
-            return True
-
-        # If not strict, try without query parameters
-        if not strict:
-            norm1_no_query = URLMatcher.normalize_url(url1, strip_query=True)
-            norm2_no_query = URLMatcher.normalize_url(url2, strip_query=True)
-            return norm1_no_query == norm2_no_query
-
-        return False
-
-    @staticmethod
-    def extract_base_url(url: str) -> str:
-        """Extract base URL without query parameters"""
-        return URLMatcher.normalize_url(url, strip_query=True)
+        @staticmethod
+        def extract_base_url(url: str) -> str:
+            return URLMatcher.normalize_url(url, strip_query=True)
 
 
 class RawLogProcessor:
@@ -192,27 +162,12 @@ class AIFlowGenerator:
         """
         self.raw_log = raw_log
         self.flow_intent = flow_intent
-        self.client = None
-        self.ai_available = False
 
-        # Check if anthropic library is available
-        if not ANTHROPIC_AVAILABLE:
-            self.ai_message = "⚠ Claude AI not available: anthropic library not installed\n  Install: pip install anthropic"
-            return
-
-        # SECURITY: Get API key from environment only (never accept via CLI)
-        api_key = get_api_key_from_env()
-        if not api_key:
-            self.ai_message = "⚠ Claude AI not available: ANTHROPIC_API_KEY not set\n  Set: export ANTHROPIC_API_KEY=your_key_here\n  Get key: https://console.anthropic.com/"
-            return
-
-        # Initialize client
-        try:
-            self.client = anthropic.Anthropic(api_key=api_key)
-            self.ai_available = True
-            self.ai_message = "✓ Claude AI enabled"
-        except Exception as e:
-            self.ai_message = f"⚠ Claude AI initialization failed: {e}"
+        # Use centralized AI client initialization
+        self.client, self.ai_available, self.ai_message = create_anthropic_client(
+            raise_on_error=False,
+            verbose=False
+        )
 
     def save_flow(self, filepath: str) -> None:
         """Generate and save flow to YAML file"""

@@ -22,11 +22,18 @@ from .template_engine import TemplateEngine
 
 # Import common utilities for secure API key handling
 try:
-    from ..common import get_api_key_from_env
+    from ..common import create_anthropic_client
 except ImportError:
     # Fallback if common module not available
-    def get_api_key_from_env():
-        return os.environ.get('ANTHROPIC_API_KEY')
+    def create_anthropic_client(raise_on_error=False, verbose=True):
+        import os
+        api_key = os.environ.get('ANTHROPIC_API_KEY')
+        if api_key and anthropic:
+            try:
+                return anthropic.Anthropic(api_key=api_key), True, "AI enabled"
+            except:
+                return None, False, "AI init failed"
+        return None, False, "No API key"
 
 
 @dataclass
@@ -70,18 +77,10 @@ class PlaywrightGenerator:
         # Initialize AI client if requested (SECURITY: API key from environment only)
         self.ai_client = None
         if use_ai:
-            if not anthropic:
-                raise ImportError("anthropic package not installed. Install with: pip install anthropic")
-
-            api_key = get_api_key_from_env()
-
-            if not api_key:
-                raise ValueError(
-                    "API key required for AI conversion. Set ANTHROPIC_API_KEY environment variable.\n"
-                    "Example: export ANTHROPIC_API_KEY=your_key"
-                )
-
-            self.ai_client = anthropic.Anthropic(api_key=api_key)
+            self.ai_client, _, _ = create_anthropic_client(
+                raise_on_error=True,
+                verbose=False
+            )
 
         # Initialize components
         self.parser = PostmanParser(collection_path)

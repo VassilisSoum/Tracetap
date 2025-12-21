@@ -167,3 +167,50 @@ class CaptureLoader:
             print(f"Warning: Skipped {invalid_count} invalid captures")
 
         return valid_captures
+
+
+def filter_interesting_headers(
+    headers: Dict[str, str],
+    additional_headers: Optional[List[str]] = None
+) -> Dict[str, str]:
+    """
+    Filter headers to only include interesting ones for analysis/matching.
+
+    This consolidates duplicate header filtering logic used across the codebase
+    for AI analysis, request matching, and debugging.
+
+    Args:
+        headers: Dictionary of headers to filter
+        additional_headers: Optional list of additional header names to include
+
+    Returns:
+        Filtered dictionary containing only interesting headers
+
+    Example:
+        filtered = filter_interesting_headers(
+            request.headers,
+            additional_headers=['x-custom-id']
+        )
+    """
+    # Comprehensive list of interesting headers from all use cases
+    interesting = [
+        'authorization',
+        'cookie',
+        'set-cookie',
+        'x-api-key',
+        'x-auth-token',
+        'x-session-id',
+        'x-request-id',
+        'x-correlation-id',
+        'x-csrf-token',
+        'x-requested-with',
+        'content-type',
+        'accept',
+    ]
+
+    # Add any additional headers specified
+    if additional_headers:
+        interesting.extend(h.lower() for h in additional_headers)
+
+    # Filter headers (case-insensitive match)
+    return {k: v for k, v in headers.items() if k.lower() in interesting}

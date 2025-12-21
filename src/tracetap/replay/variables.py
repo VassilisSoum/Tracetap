@@ -14,11 +14,8 @@ from urllib.parse import urlparse, parse_qs
 from datetime import datetime
 from textwrap import dedent
 
-try:
-    import anthropic
-    ANTHROPIC_AVAILABLE = True
-except ImportError:
-    ANTHROPIC_AVAILABLE = False
+# Import common utilities for AI client and header filtering
+from ..common import create_anthropic_client, ANTHROPIC_AVAILABLE, filter_interesting_headers
 
 
 @dataclass
@@ -31,10 +28,6 @@ class Variable:
     locations: List[str]    # Where found (e.g., "url_path", "query_param", "header")
     pattern: Optional[str] = None  # Regex pattern if applicable
     description: Optional[str] = None  # AI-generated description
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary."""
-        return asdict(self)
 
 
 class VariableExtractor:
@@ -73,27 +66,26 @@ class VariableExtractor:
             use_ai: Whether to use Claude AI (falls back to regex if False)
         """
         self.captures = captures
-        self.use_ai = use_ai and ANTHROPIC_AVAILABLE
-        self.client = None
-        self.ai_message = ""
 
-        # Initialize Claude client if available
-        if self.use_ai:
-            actual_api_key = api_key or os.environ.get('ANTHROPIC_API_KEY')
-            if not actual_api_key:
-                self.use_ai = False
-                self.ai_message = "⚠️  Claude AI not available: ANTHROPIC_API_KEY not set (using regex fallback)"
+        # Initialize Claude client using centralized utility
+        if use_ai and ANTHROPIC_AVAILABLE:
+            self.client, self.use_ai, msg = create_anthropic_client(
+                api_key=api_key,
+                raise_on_error=False,
+                verbose=False
+            )
+            # Customize message for variable extraction context
+            if self.use_ai:
+                self.ai_message = "✓ Claude AI enabled for intelligent variable detection"
             else:
-                try:
-                    self.client = anthropic.Anthropic(api_key=actual_api_key)
-                    self.ai_message = "✓ Claude AI enabled for intelligent variable detection"
-                except Exception as e:
-                    self.use_ai = False
-                    self.ai_message = f"⚠️  Claude AI failed: {e} (using regex fallback)"
-        elif ANTHROPIC_AVAILABLE:
-            self.ai_message = "⚠️  Claude AI disabled (use_ai=False)"
+                self.ai_message = f"⚠️  {msg} (using regex fallback)"
         else:
-            self.ai_message = "⚠️  anthropic library not installed (using regex fallback)"
+            self.client = None
+            self.use_ai = False
+            if not use_ai:
+                self.ai_message = "⚠️  Claude AI disabled (use_ai=False)"
+            else:
+                self.ai_message = "⚠️  anthropic library not installed (using regex fallback)"
 
     def extract_variables(self, verbose: bool = False) -> List[Variable]:
         """
@@ -130,8 +122,8 @@ class VariableExtractor:
                 'method': capture.get('method'),
                 'url': capture.get('url'),
                 'status': capture.get('status'),
-                'req_headers': self._filter_interesting_headers(capture.get('req_headers', {})),
-                'resp_headers': self._filter_interesting_headers(capture.get('resp_headers', {})),
+                'req_headers': filter_interesting_headers(capture.get('req_headers', {})),
+                'resp_headers': filter_interesting_headers(capture.get('resp_headers', {})),
                 'req_body_sample': self._truncate_body(capture.get('req_body', '')),
                 'resp_body_sample': self._truncate_body(capture.get('resp_body', ''))
             })
@@ -307,16 +299,6 @@ class VariableExtractor:
             print(f"✓ Regex detected {len(variables)} variable patterns")
 
         return variables
-
-    def _filter_interesting_headers(self, headers: Dict[str, str]) -> Dict[str, str]:
-        """Filter to interesting headers only (for AI analysis)."""
-        interesting = [
-            'authorization', 'cookie', 'set-cookie', 'x-api-key',
-            'x-auth-token', 'x-session-id', 'x-request-id', 'x-correlation-id',
-            'x-csrf-token', 'content-type'
-        ]
-
-        return {k: v for k, v in headers.items() if k.lower() in interesting}
 
     def _truncate_body(self, body: str, max_length: int = 500) -> str:
         """Truncate body for AI analysis."""

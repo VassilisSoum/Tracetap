@@ -24,6 +24,8 @@
    - [Scenario 11: AI Variable Extraction](#scenario-11-ai-variable-extraction)
    - [Scenario 12: YAML Test Scenarios](#scenario-12-generate-yaml-test-scenarios)
    - [Scenario 13: Chaos Engineering](#scenario-13-mock-server-with-chaos-engineering)
+   - [Scenario 14: Playwright Test Generation](#scenario-14-generate-playwright-tests-from-postman-collection)
+   - [Scenario 15: Collection Updater](#scenario-15-update-existing-postman-collection)
 6. [Command Reference](#command-reference)
 7. [Troubleshooting](#troubleshooting)
 
@@ -37,6 +39,8 @@ TraceTap is a comprehensive HTTP/HTTPS traffic capture proxy that records API in
 - Document APIs by capturing live traffic
 - Generate Postman collections from real user workflows
 - Create WireMock stubs for testing and mocking
+- Generate Playwright API tests from Postman collections
+- Update existing Postman collections with new captures
 - Replay production traffic to staging/test environments
 - Run mock HTTP servers for offline development
 - Extract variables automatically with AI (IDs, tokens, UUIDs)
@@ -125,9 +129,8 @@ TraceTap is a comprehensive HTTP/HTTPS traffic capture proxy that records API in
 - **AI Semantic Matching**: Understands request intent across different IDs
 - **Request Recording**: Capture incoming requests during mock operation
 - **Diff Tracking**: Identify mismatches and API changes
-- **Faker Integration**: Generate realistic fake data (names, emails, dates)
 - **Match Caching**: Performance optimization with FIFO cache
-- **Response Modes**: Static, template, transform, faker, AI, intelligent
+- **Response Modes**: Static, template, transform, AI, intelligent
 - **Chaos Engineering**: Simulate failures, delays, and errors
 - **Admin API**: Runtime management and monitoring
 
@@ -144,6 +147,31 @@ TraceTap is a comprehensive HTTP/HTTPS traffic capture proxy that records API in
 - Request intent analysis
 
 📚 **[See REPLAY.md for detailed documentation](REPLAY.md)**
+
+#### 4. Playwright Test Generator (`tracetap-playwright.py`)
+**Powered by Claude Sonnet 4.5**
+
+- **Postman to Playwright Conversion**: Transform Postman collections into TypeScript Playwright tests
+- **AI Test Script Conversion**: Automatically converts `pm.test()` assertions to Playwright `expect()` statements
+- **Fixture Generation**: Creates authentication and variable fixtures
+- **TypeScript Code Generation**: Produces clean, formatted TypeScript test files
+- **Variable Extraction**: Detects and extracts response values for chaining tests
+- **Folder Structure Preservation**: Maintains Postman folder organization in test suites
+
+**Features:**
+- Supports Postman Collection v2.1 format
+- Pattern-based fallback when AI unavailable
+- Generates complete test files with imports and fixtures
+- Configurable output with comments and formatting
+- Playwright config template generation
+
+**Conversion Capabilities:**
+- HTTP methods: GET, POST, PUT, DELETE, PATCH, etc.
+- Headers with variable expansion
+- Request bodies (JSON, formdata, urlencoded)
+- Authentication (Bearer, API Key)
+- Test assertions and validations
+- Response variable extraction
 
 ### Certificate Management
 
@@ -232,6 +260,22 @@ TraceTap is a comprehensive HTTP/HTTPS traffic capture proxy that records API in
 - **Platform Scripts**: Shell/PowerShell scripts for each OS
 - **Certificate Location**: `~/.mitmproxy/mitmproxy-ca-cert.pem`
 
+#### 5. Common Utilities (`src/tracetap/common/`)
+- **ai_utils.py**: Centralized AI client initialization
+  - Eliminates ~150 lines of duplicate code across 7+ files
+  - `create_anthropic_client()` function with standardized error handling
+  - Single source of truth for Anthropic client creation
+  - Graceful degradation when AI unavailable
+  - Security: API key from environment variable only
+- **url_utils.py**: URL parsing, normalization, and matching utilities
+  - `URLMatcher` class with multiple matching strategies
+  - URL normalization with query parameter sorting
+  - Flexible URL comparison (strict/fuzzy modes)
+  - Eliminates duplicate URL handling code
+- **utils.py**: Shared utility functions
+  - `filter_interesting_headers()` for security-relevant header filtering
+  - Common helper functions used across modules
+
 ### Data Flow
 
 1. **Capture Phase**:
@@ -296,10 +340,10 @@ pip install -r requirements-replay.txt
 
 **Replay/Mock Packages:**
 - `requests>=2.31.0` - HTTP client for replay
-- `fastapi>=0.109.0` - Web framework for mock server
-- `uvicorn>=0.27.0` - ASGI server for FastAPI
+- `fastapi>=0.104.0` - Web framework for mock server
+- `uvicorn[standard]>=0.24.0` - ASGI server for FastAPI
 - `jsonpath-ng>=1.6.0` - JSONPath for response extraction
-- `pytest>=8.0.0` - Testing framework (for tests)
+- `pytest>=7.4.0` - Testing framework (for tests)
 
 ### Step 3: Install Certificate (REQUIRED for HTTPS)
 
@@ -984,23 +1028,7 @@ curl http://localhost:8080/__admin__/diffs/latest
 - Find missing endpoints in captures
 - Validate API contract compliance
 
-**4. Faker Integration** (`--faker`)
-```bash
-# Generate realistic fake data in responses
-python tracetap-replay.py mock api_captures.json \
-  --faker \
-  --faker-locale en_US \
-  --faker-seed 12345  # For reproducible data
-```
-
-Automatically generates realistic data:
-- Names: "John Doe" → "Sarah Johnson"
-- Emails: "user@example.com" → "sarah.j@example.com"
-- Dates: "2024-01-15" → current date
-- UUIDs: Fresh UUIDs for each request
-- Addresses, phone numbers, companies, etc.
-
-**5. Match Caching** (Enabled by default)
+**4. Match Caching** (Enabled by default)
 ```bash
 # Caching is on by default for performance
 python tracetap-replay.py mock api_captures.json
@@ -1032,7 +1060,7 @@ curl -X DELETE http://localhost:8080/__admin__/cache
 - Sub-millisecond response for cache hits
 - FIFO eviction when cache is full
 
-**6. Response Modes** (`--response-mode`)
+**5. Response Modes** (`--response-mode`)
 ```bash
 # Static: Return captured responses as-is (default)
 python tracetap-replay.py mock api_captures.json --response-mode static
@@ -1042,9 +1070,6 @@ python tracetap-replay.py mock api_captures.json --response-mode template
 
 # Transform: Apply transformations to responses
 python tracetap-replay.py mock api_captures.json --response-mode transform
-
-# Faker: Generate realistic fake data
-python tracetap-replay.py mock api_captures.json --response-mode faker --faker
 
 # AI: Intelligent response generation
 python tracetap-replay.py mock api_captures.json --response-mode ai --ai
@@ -1063,8 +1088,6 @@ python tracetap-replay.py mock prod_captures.json \
   --record-limit 10000 \
   --diff \
   --diff-threshold 0.7 \
-  --faker \
-  --faker-locale en_US \
   --response-mode intelligent \
   --delay 50 \
   --chaos \
@@ -1077,7 +1100,6 @@ python tracetap-replay.py mock prod_captures.json \
 🤖 AI features enabled
 📹 Request recording enabled (limit: 10000)
 🔍 Diff tracking enabled (threshold: 0.7, limit: 100)
-🎲 Faker enabled (locale: en_US)
 💾 Match caching enabled (max size: 1000)
 
 🚀 TraceTap Mock Server starting...
@@ -1105,7 +1127,6 @@ GET    /__admin__/diffs/latest  - Get most recent diff
 
 GET    /__admin__/cache         - Cache statistics
 DELETE /__admin__/cache         - Clear cache
-
 POST   /__admin__/replay        - Replay recorded requests
 ```
 
@@ -1450,6 +1471,701 @@ server.start()
 
 ---
 
+### Scenario 14: Generate Playwright Tests from Postman Collection
+
+**Goal**: Convert Postman collection to automated Playwright API tests
+
+**Use Case**: Automate API testing by generating TypeScript test suite from Postman collections or captured traffic
+
+**Steps:**
+
+1. **Capture or obtain Postman collection:**
+```bash
+# Option A: Capture traffic to Postman collection
+python tracetap.py --listen 8080 --export my_api.json --session "API Testing"
+# ... make API requests ...
+# Ctrl+C
+
+# Option B: Use existing Postman collection
+# Export from Postman: File → Export → Collection v2.1
+```
+
+2. **Generate Playwright tests:**
+```bash
+python tracetap-playwright.py my_api.json --output tests/
+```
+
+**Console Output:**
+```
+==================================================
+TraceTap Playwright Test Generator
+==================================================
+
+Input: my_api.json
+Output: tests/
+AI Conversion: Enabled
+
+🔍 Parsing Postman collection...
+✓ Found 12 requests
+✓ Folder structure: 3 folders
+
+🔄 Converting requests to Playwright tests...
+📝 Converting test scripts...
+   ✓ Converted 8 test scripts with AI
+   ⚠  2 scripts marked for manual review
+🔧 Generating fixtures...
+   ✓ Generated 3 fixtures (baseUrl, authToken, userId)
+📄 Generating TypeScript test file...
+
+==================================================
+✅ Generation Complete!
+==================================================
+
+Generated: tests/my-api.spec.ts
+   Tests: 12
+   Fixtures: 3
+   Folders: 3
+
+📖 Next Steps:
+1. Install Playwright: npm install -D @playwright/test
+2. Review generated tests and adjust as needed
+3. Set environment variables (BASE_URL, AUTH_TOKEN, etc.)
+4. Run tests: npx playwright test
+```
+
+3. **Review generated test file** (`tests/my-api.spec.ts`):
+
+```typescript
+/**
+ * Playwright API Tests
+ * Generated from Postman Collection: My API
+ * Generated on: 2025-12-21 14:30:00
+ */
+
+import { test as base, expect } from '@playwright/test';
+
+// Custom fixtures for authentication and variables
+type CustomFixtures = {
+  baseUrl: string;
+  authToken: string;
+  userId: string;
+};
+
+const test = base.extend<CustomFixtures>({
+  baseUrl: async ({}, use) => {
+    const url = process.env.BASE_URL || 'https://api.example.com';
+    await use(url);
+  },
+
+  authToken: async ({ request, baseUrl }, use) => {
+    // Option 1: Use environment variable
+    if (process.env.AUTH_TOKEN) {
+      await use(process.env.AUTH_TOKEN);
+      return;
+    }
+
+    // Option 2: Perform login to get token
+    const response = await request.post(`${baseUrl}/auth/login`, {
+      data: { username: 'testuser', password: 'testpass' }
+    });
+    const data = await response.json();
+    await use(data.token);
+  },
+
+  userId: async ({}, use) => {
+    await use(process.env.USER_ID || '12345');
+  }
+});
+
+// Main test suite
+test.describe('My API', () => {
+
+  test.describe('Authentication', () => {
+
+    test('Login with valid credentials', async ({ request, baseUrl }) => {
+      const response = await request.post(`${baseUrl}/auth/login`, {
+        headers: { 'Content-Type': 'application/json' },
+        data: {
+          "username": "testuser",
+          "password": "testpass"
+        }
+      });
+
+      // Assertions converted from Postman test scripts
+      expect(response.status()).toBe(200);
+
+      const data = await response.json();
+      expect(data.token).toBeTruthy();
+      expect(data.token).toMatch(/^eyJ/); // JWT format
+
+      // Extract token for use in subsequent tests
+      const authToken = data.token;
+    });
+
+  });
+
+  test.describe('Users', () => {
+
+    test('Get user profile', async ({ request, baseUrl, authToken, userId }) => {
+      const response = await request.get(`${baseUrl}/users/${userId}`, {
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      expect(response.status()).toBe(200);
+
+      const user = await response.json();
+      expect(user.id).toBe(parseInt(userId));
+      expect(user.email).toMatch(/^[^@]+@[^@]+$/);
+    });
+
+    test('Update user profile', async ({ request, baseUrl, authToken, userId }) => {
+      const response = await request.put(`${baseUrl}/users/${userId}`, {
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json'
+        },
+        data: {
+          "name": "Updated Name",
+          "email": "updated@example.com"
+        }
+      });
+
+      expect(response.status()).toBe(200);
+    });
+
+  });
+
+});
+```
+
+4. **Install Playwright (if not already installed):**
+```bash
+cd tests/
+npm init -y
+npm install -D @playwright/test
+```
+
+5. **Set environment variables:**
+```bash
+export BASE_URL=https://api.staging.com
+export AUTH_TOKEN=your-test-token-here
+export USER_ID=12345
+```
+
+**Or create `.env` file:**
+```bash
+BASE_URL=https://api.staging.com
+AUTH_TOKEN=your-test-token-here
+USER_ID=12345
+```
+
+6. **Run the tests:**
+```bash
+npx playwright test
+```
+
+**Output:**
+```
+Running 12 tests using 4 workers
+
+  ✓  my-api.spec.ts:45:3 › My API › Authentication › Login (234ms)
+  ✓  my-api.spec.ts:62:3 › My API › Users › Get user profile (145ms)
+  ✓  my-api.spec.ts:78:3 › My API › Users › Update user profile (198ms)
+  ✓  my-api.spec.ts:95:3 › My API › Products › List products (167ms)
+  ...
+
+  12 passed (1.2s)
+```
+
+7. **Run specific tests or with options:**
+```bash
+# Run only Authentication tests
+npx playwright test --grep "Authentication"
+
+# Run with verbose output
+npx playwright test --reporter=list
+
+# Generate HTML report
+npx playwright test --reporter=html
+
+# Run in headed mode (see browser for UI tests)
+npx playwright test --headed
+
+# Run with specific number of workers
+npx playwright test --workers=1
+```
+
+**Advanced: Generate Playwright config template**
+```bash
+python tracetap-playwright.py --config-template > playwright.config.ts
+```
+
+**Generated Config:**
+```typescript
+import { defineConfig } from '@playwright/test';
+
+export default defineConfig({
+  testDir: './tests',
+
+  // API testing doesn't need browser
+  use: {
+    baseURL: process.env.BASE_URL || 'https://api.example.com',
+    extraHTTPHeaders: {
+      // Add any default headers here
+    },
+  },
+
+  // Timeouts
+  timeout: 30000,
+  expect: {
+    timeout: 5000,
+  },
+
+  // Reporters
+  reporter: [
+    ['html'],
+    ['list'],
+  ],
+
+  // Run tests in parallel
+  workers: process.env.CI ? 1 : undefined,
+});
+```
+
+**Without AI (Pattern-Based Conversion):**
+```bash
+# Faster conversion using pattern matching instead of AI
+python tracetap-playwright.py my_api.json --output tests/ --no-ai
+```
+
+**What Gets Generated:**
+
+✅ **Complete TypeScript test file** with:
+- Import statements for Playwright
+- Custom fixtures for authentication and variables
+- Test suites organized by folder structure
+- Converted test assertions
+- Variable extractions for test chaining
+- Proper TypeScript formatting
+
+✅ **AI-Powered Conversion**:
+- Postman `pm.test()` → Playwright `expect()`
+- `pm.response.to.have.status(200)` → `expect(response.status()).toBe(200)`
+- `pm.expect(data).to.exist` → `expect(data).toBeTruthy()`
+- `pm.collectionVariables.set()` → Variable extraction
+
+✅ **Fixture Generation**:
+- Base URL fixture from environment
+- Authentication tokens (with login template)
+- Custom variables used in requests
+
+**Use Cases:**
+
+1. **API Test Automation:**
+   - Capture real API workflows
+   - Generate automated regression tests
+   - Run in CI/CD pipelines
+
+2. **Postman to Code:**
+   - Convert manual Postman tests to automated code
+   - Version control your API tests
+   - Share test suites across teams
+
+3. **Documentation as Code:**
+   - Tests serve as executable API documentation
+   - Keep tests in sync with API changes
+   - Validate API contracts automatically
+
+4. **Integration Testing:**
+   - Test API endpoints in isolation
+   - Chain requests with variable extraction
+   - Validate response schemas and data
+
+**Limitations:**
+
+- Requires Postman Collection v2.1 format
+- Complex JavaScript in test scripts may need manual review
+- Browser UI automation not supported (API tests only)
+- Some authentication methods may require customization
+
+**Complete Workflow Example:**
+
+```bash
+# 1. Capture API traffic
+python tracetap.py --listen 8080 --export api_capture.json
+
+# 2. Generate Playwright tests
+python tracetap-playwright.py api_capture.json --output playwright-tests/
+
+# 3. Setup Playwright
+cd playwright-tests/
+npm init -y
+npm install -D @playwright/test
+
+# 4. Configure environment
+echo "BASE_URL=https://api.staging.com" > .env
+echo "AUTH_TOKEN=staging-token" >> .env
+
+# 5. Run tests
+npx playwright test
+
+# 6. View HTML report
+npx playwright show-report
+```
+
+---
+
+### Scenario 15: Update Existing Postman Collection
+
+**Goal**: Update an existing Postman collection with data from new captures while preserving customizations
+
+**Use Case**: Keep collections up-to-date with latest API changes while maintaining test scripts, descriptions, and authentication settings added by users
+
+**Steps:**
+
+1. **You have an existing Postman collection with customizations:**
+```json
+// existing_collection.json
+{
+  "info": { "name": "My API" },
+  "item": [
+    {
+      "name": "Get User",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/users/123"
+      },
+      "event": [{
+        "listen": "test",
+        "script": {
+          "exec": [
+            "pm.test('Status is 200', function() {",
+            "  pm.response.to.have.status(200);",
+            "});"
+          ]
+        }
+      }]
+    }
+  ]
+}
+```
+
+2. **Capture new API traffic:**
+```bash
+python tracetap.py --listen 8080 --export new_captures.json
+# ... make API requests with updated endpoints ...
+# Ctrl+C
+```
+
+3. **Preview changes with dry run:**
+```bash
+python tracetap-update-collection.py existing_collection.json new_captures.json --dry-run
+```
+
+**Output:**
+```
+==================================================
+TraceTap Collection Updater - Dry Run Mode
+==================================================
+
+📂 Existing collection: existing_collection.json
+   Requests: 12
+   Variables: 3
+
+📥 New captures: new_captures.json
+   Captured requests: 15
+
+🔍 Analyzing changes...
+
+==================================================
+📊 Update Summary
+==================================================
+
+✨ New Requests (3):
+   + POST /users          - Create new user
+   + GET /users/456/posts - Get user posts
+   + DELETE /users/789    - Delete user
+
+🔄 Updated Requests (9):
+   ~ GET /users/123       - URL parameters changed
+   ~ POST /auth/login     - Request body updated
+   ~ PUT /users/123       - New header: X-API-Version
+
+📍 Unchanged (0):
+   (all requests have updates)
+
+⚠️  Requests not in captures (3):
+   ! GET /old-endpoint    - Will be deprecated (add description)
+   ! POST /legacy-api     - Will be deprecated (add description)
+
+==================================================
+Preserved Customizations:
+==================================================
+
+✓ Test scripts: 8 requests
+✓ Descriptions: 5 requests
+✓ Authentication: Bearer token configuration
+✓ Variables: baseUrl, userId, authToken
+
+==================================================
+💡 Next Steps:
+==================================================
+
+To apply these changes, run without --dry-run:
+   python tracetap-update-collection.py existing_collection.json new_captures.json
+
+Backup will be created: existing_collection.backup.json
+```
+
+4. **Apply the update:**
+```bash
+python tracetap-update-collection.py existing_collection.json new_captures.json
+```
+
+**Output:**
+```
+==================================================
+TraceTap Collection Updater
+==================================================
+
+📂 Loading existing collection...
+   ✓ Loaded 12 requests from existing_collection.json
+
+📥 Loading new captures...
+   ✓ Loaded 15 requests from new_captures.json
+
+🔍 Matching requests...
+   ✓ Matched 9 existing requests
+   ✓ Found 3 new requests
+   ✓ Found 3 removed requests
+
+💾 Creating backup...
+   ✓ Saved backup to existing_collection.backup.json
+
+🔄 Updating collection...
+   ✓ Updated 9 requests
+   ✓ Added 3 new requests
+   ✓ Deprecated 3 removed requests
+   ✓ Preserved 8 test scripts
+   ✓ Preserved 5 descriptions
+   ✓ Preserved authentication config
+
+✅ Collection updated successfully!
+   Output: existing_collection.json
+
+Summary:
+   Updated: 9 requests
+   Added: 3 requests
+   Deprecated: 3 requests
+   Total: 15 requests
+```
+
+5. **Review the updated collection:**
+```json
+// existing_collection.json (after update)
+{
+  "info": { "name": "My API" },
+  "item": [
+    {
+      "name": "Get User",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/users/123"  // Updated URL from captures
+      },
+      "event": [{
+        "listen": "test",
+        "script": {
+          "exec": [
+            "pm.test('Status is 200', function() {",
+            "  pm.response.to.have.status(200);",
+            "});"  // Test script PRESERVED
+          ]
+        }
+      }]
+    },
+    {
+      "name": "Create new user",  // NEW REQUEST
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/users"
+      }
+    },
+    {
+      "name": "Get old endpoint",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/old-endpoint"
+      },
+      "description": "⚠️ DEPRECATED: Not found in recent captures"  // Auto-added
+    }
+  ]
+}
+```
+
+6. **Generate detailed report:**
+```bash
+python tracetap-update-collection.py existing_collection.json new_captures.json \
+  --report update_report.json
+```
+
+**Report Contents:**
+```json
+{
+  "timestamp": "2025-12-21T15:30:00",
+  "existing_collection": "existing_collection.json",
+  "new_captures": "new_captures.json",
+  "statistics": {
+    "existing_requests": 12,
+    "captured_requests": 15,
+    "matched": 9,
+    "new": 3,
+    "removed": 3,
+    "updated": 9
+  },
+  "changes": [
+    {
+      "request": "GET /users/123",
+      "action": "updated",
+      "changes": ["url_parameters", "headers"],
+      "preserved": ["test_script", "description"]
+    }
+  ],
+  "preserved_customizations": {
+    "test_scripts": 8,
+    "descriptions": 5,
+    "auth_config": true
+  }
+}
+```
+
+**Configuration Options:**
+
+```bash
+# Custom match threshold (default: 0.75)
+python tracetap-update-collection.py existing.json captures.json \
+  --match-threshold 0.85
+
+# Handle new requests differently
+python tracetap-update-collection.py existing.json captures.json \
+  --new-requests ignore  # Options: add (default), prompt, ignore
+
+# Handle removed requests differently
+python tracetap-update-collection.py existing.json captures.json \
+  --removed-requests keep  # Options: deprecate (default), archive, keep
+
+# Don't create backup
+python tracetap-update-collection.py existing.json captures.json \
+  --no-backup
+
+# Custom output file
+python tracetap-update-collection.py existing.json captures.json \
+  -o updated_collection.json
+```
+
+**What Gets Preserved:**
+
+✅ **Always Preserved:**
+- Test scripts (`pm.test()` blocks)
+- Pre-request scripts
+- Request descriptions
+- Authentication settings
+- Collection variables
+- Folder structure
+
+✅ **Updated from Captures:**
+- Request URLs
+- HTTP methods
+- Headers
+- Request bodies
+- Query parameters
+
+**Use Cases:**
+
+1. **API Evolution Tracking:**
+   - Capture latest API behavior
+   - Update collection automatically
+   - Maintain test suite integrity
+
+2. **Team Collaboration:**
+   - Developers update API
+   - QA adds test scripts
+   - Collection stays synchronized
+
+3. **Documentation Maintenance:**
+   - Keep descriptions and examples current
+   - Track deprecated endpoints
+   - Document API changes
+
+4. **CI/CD Integration:**
+   - Automated collection updates
+   - Regression detection
+   - API contract validation
+
+**Matching Algorithm:**
+
+The updater uses intelligent matching:
+- **URL Pattern Matching**: Handles dynamic IDs (123 vs 456)
+- **Similarity Scoring**: Fuzzy matching for changed endpoints
+- **Confidence Threshold**: Adjustable (default: 0.75)
+
+**Example Matches:**
+- `GET /users/123` matches `GET /users/456` (different ID)
+- `GET /api/v1/users` matches `GET /api/v2/users` (version change)
+- `POST /login` matches `POST /auth/login` (path change, high similarity)
+
+**Conflict Resolution:**
+
+```bash
+# If automatic matching is uncertain:
+python tracetap-update-collection.py existing.json captures.json
+
+# Console output:
+⚠️  Uncertain matches found (confidence < 0.75):
+   ? GET /users/profile vs GET /users/me (score: 0.65)
+
+   Options:
+   1. Accept match (merge requests)
+   2. Keep separate (treat as different requests)
+   3. Skip this request
+
+   Choice [1/2/3]: _
+```
+
+**Complete Workflow:**
+
+```bash
+# 1. Initial capture
+python tracetap.py --listen 8080 --export initial_collection.json
+
+# 2. Add customizations in Postman (tests, descriptions, auth)
+
+# 3. API evolves over time...
+
+# 4. Capture new traffic
+python tracetap.py --listen 8080 --export new_captures.json
+
+# 5. Preview changes
+python tracetap-update-collection.py initial_collection.json new_captures.json --dry-run
+
+# 6. Apply update
+python tracetap-update-collection.py initial_collection.json new_captures.json
+
+# 7. Import updated collection to Postman
+# All your tests and customizations are preserved!
+```
+
+**Limitations:**
+
+- Requires valid Postman Collection v2.1 format
+- Can't detect renamed endpoints automatically (relies on similarity)
+- Complex folder reorganizations may need manual review
+- Backup recommended (enabled by default)
+
+---
+
 ## Command Reference
 
 ### Main Capture Tool: `tracetap.py`
@@ -1510,6 +2226,159 @@ Options:
 Examples:
   python tracetap2wiremock.py capture.json --output wiremock/mappings/
   python tracetap2wiremock.py capture.json --flow flow.yaml --output stubs/
+```
+
+### Playwright Test Generator: `tracetap-playwright.py`
+
+```
+Usage: python tracetap-playwright.py [collection.json] [OPTIONS]
+
+Positional Arguments:
+  collection                 Path to Postman Collection v2.1 JSON file
+
+Output Options:
+  --output, -o DIR          Output directory for test files (required)
+
+AI Options:
+  --use-ai                  Use AI for test script conversion (default: enabled)
+  --no-ai                   Disable AI, use pattern matching only
+
+Code Options:
+  --no-comments             Omit comments in generated code
+
+Utility Options:
+  --config-template         Print Playwright config template and exit
+  --verbose, -v             Verbose output
+  --help, -h                Show help message
+
+Environment Variables:
+  ANTHROPIC_API_KEY         API key for Claude AI (required for --use-ai)
+  BASE_URL                  Default base URL for API endpoints
+
+Examples:
+  # Basic usage with AI conversion
+  python tracetap-playwright.py collection.json --output tests/
+
+  # Without AI (pattern-based only, faster)
+  python tracetap-playwright.py collection.json --output tests/ --no-ai
+
+  # Generate without comments
+  python tracetap-playwright.py collection.json --output tests/ --no-comments
+
+  # Generate Playwright config template
+  python tracetap-playwright.py --config-template > playwright.config.ts
+
+  # Verbose output
+  python tracetap-playwright.py collection.json --output tests/ --verbose
+
+Complete Workflow:
+  # 1. Capture traffic to Postman
+  python tracetap.py --listen 8080 --export api.json
+
+  # 2. Generate Playwright tests
+  python tracetap-playwright.py api.json --output playwright-tests/
+
+  # 3. Install Playwright and run tests
+  cd playwright-tests/
+  npm install -D @playwright/test
+  npx playwright test
+
+Input Requirements:
+  - Postman Collection v2.1 format
+  - Valid JSON structure
+  - Supports nested folders
+
+Output:
+  - TypeScript test files (.spec.ts)
+  - Custom fixtures for auth and variables
+  - Playwright config template (optional)
+
+Conversion Features:
+  - Converts pm.test() to expect() assertions
+  - Extracts variables from responses
+  - Generates authentication fixtures
+  - Preserves folder structure
+  - AI-powered script conversion (optional)
+```
+
+### Collection Updater: `tracetap-update-collection.py`
+
+```
+Usage: python tracetap-update-collection.py <existing> <captures> [OPTIONS]
+
+Positional Arguments:
+  existing                   Path to existing Postman collection (JSON)
+  captures                   Path to new capture log (JSON)
+
+Output Options:
+  -o, --output FILE          Output file (default: overwrite existing)
+  --report FILE              Save update report to JSON file
+
+Matching Options:
+  --match-threshold FLOAT    Minimum confidence for auto-matching (0.0-1.0, default: 0.75)
+  --new-requests MODE        How to handle new requests: add (default), prompt, ignore
+  --removed-requests MODE    How to handle removed: deprecate (default), archive, keep
+
+Preservation Options:
+  --no-preserve-tests        Don't preserve test scripts (not recommended)
+  --no-preserve-auth         Don't preserve authentication settings
+
+Backup Options:
+  --no-backup                Don't create backup before updating
+
+Execution Options:
+  --dry-run                  Show what would change without applying
+  -v, --verbose              Verbose output
+  -q, --quiet                Minimal output
+
+Examples:
+  # Basic update (creates backup automatically)
+  python tracetap-update-collection.py existing.json captures.json
+
+  # Dry run to preview changes
+  python tracetap-update-collection.py existing.json captures.json --dry-run
+
+  # Custom output file
+  python tracetap-update-collection.py existing.json captures.json -o updated.json
+
+  # Higher matching threshold (more strict)
+  python tracetap-update-collection.py existing.json captures.json --match-threshold 0.85
+
+  # Keep removed requests instead of deprecating
+  python tracetap-update-collection.py existing.json captures.json --removed-requests keep
+
+  # Generate detailed report
+  python tracetap-update-collection.py existing.json captures.json --report report.json
+
+Complete Workflow:
+  # 1. Capture initial traffic
+  python tracetap.py --listen 8080 --export initial.json
+
+  # 2. (Add customizations in Postman: tests, descriptions, auth)
+
+  # 3. Capture new traffic after API changes
+  python tracetap.py --listen 8080 --export new.json
+
+  # 4. Preview update
+  python tracetap-update-collection.py initial.json new.json --dry-run
+
+  # 5. Apply update
+  python tracetap-update-collection.py initial.json new.json
+
+Preserved Customizations:
+  - Test scripts (pm.test() blocks)
+  - Pre-request scripts
+  - Request descriptions
+  - Authentication settings
+  - Collection variables
+  - Folder structure
+
+Updated from Captures:
+  - Request URLs
+  - HTTP methods
+  - Headers
+  - Request bodies
+  - Query parameters
 ```
 
 ### Traffic Replay & Mock: `tracetap-replay.py`
@@ -1955,7 +2824,14 @@ python tracetap-replay.py scenario workflow.json --use-ai --name "User Flow"
 # 10. Mock with chaos engineering
 python tracetap-replay.py mock api.json --chaos --chaos-rate 0.1 --delay 100
 
-# 11. Debug filtering
+# 11. Generate Playwright tests from Postman
+python tracetap.py --listen 8080 --export api.json
+python tracetap-playwright.py api.json --output tests/
+
+# 12. Update existing Postman collection
+python tracetap-update-collection.py existing.json new.json --dry-run
+
+# 13. Debug filtering
 python tracetap.py --listen 8080 --verbose --filter-host "*.example.com"
 ```
 
@@ -1997,31 +2873,46 @@ curl -x http://localhost:8080 -k https://api.example.com
 
 - **Source Code**: `/home/terminatorbill/PycharmProjects/Tracetap/`
 - **Tests**: `/home/terminatorbill/PycharmProjects/Tracetap/tests/`
-- **Documentation**: `/home/terminatorbill/PycharmProjects/Tracetap/docs/`
 - **License**: MIT
 
 **Key Files:**
 
 *Capture & Export:*
-- `tracetap.py` - Main capture tool (714 lines)
-- `tracetap-ai-postman.py` - AI Postman generator (1061 lines)
-- `tracetap2wiremock.py` - WireMock stub generator (478 lines)
+- `tracetap.py` - Main entry point (25 lines, wrapper to modular implementation)
+- `src/tracetap/capture/tracetap_main.py` - Core capture implementation (247 lines)
+- `tracetap-ai-postman.py` - AI Postman generator (1533 lines)
+- `tracetap2wiremock.py` - WireMock stub generator (461 lines)
 - `src/tracetap/capture/exporters.py` - Export implementations (551 lines)
 - `src/tracetap/capture/filters.py` - Filtering logic (102 lines)
 
+*Collection Updater:*
+- `tracetap-update-collection.py` - Collection updater CLI (234 lines)
+- `src/tracetap/update/updater.py` - Update orchestrator
+- `src/tracetap/update/matcher.py` - Request matching logic
+- `src/tracetap/update/merger.py` - Collection merging logic
+
 *Replay & Mock:*
-- `tracetap-replay.py` - CLI for replay and mock features (550 lines)
-- `src/tracetap/replay/replayer.py` - Traffic replay engine (450 lines)
-- `src/tracetap/replay/variables.py` - AI variable extraction (380 lines)
-- `src/tracetap/replay/replay_config.py` - YAML scenario configuration (600 lines)
-- `src/tracetap/mock/server.py` - FastAPI mock server (650 lines)
-- `src/tracetap/mock/matcher.py` - Request matching engine (650 lines)
-- `src/tracetap/mock/generator.py` - Response generation (550 lines)
+- `tracetap-replay.py` - CLI for replay and mock features (471 lines)
+- `src/tracetap/replay/replayer.py` - Traffic replay engine (408 lines)
+- `src/tracetap/replay/variables.py` - AI variable extraction (384 lines)
+- `src/tracetap/replay/replay_config.py` - YAML scenario configuration (533 lines)
+- `src/tracetap/mock/server.py` - FastAPI mock server (1299 lines)
+- `src/tracetap/mock/matcher.py` - Request matching engine (931 lines)
+- `src/tracetap/mock/generator.py` - Response generation (544 lines)
+
+*Playwright Test Generation:*
+- `tracetap-playwright.py` - Playwright test generator CLI
+- `src/tracetap/playwright/playwright_generator.py` - Main orchestrator (256 lines)
+- `src/tracetap/playwright/postman_parser.py` - Postman collection parser (343 lines)
+- `src/tracetap/playwright/test_converter.py` - Request to test converter (299 lines)
+- `src/tracetap/playwright/script_analyzer.py` - AI script conversion (311 lines)
+- `src/tracetap/playwright/fixture_generator.py` - Fixture generation (213 lines)
+- `src/tracetap/playwright/template_engine.py` - TypeScript code rendering (308 lines)
 
 **Test Coverage**: 514 tests passing (178 capture + 336 replay/mock), comprehensive coverage
 
 ---
 
-**Last Updated**: 2025-12-08
-**Version**: Based on intelligent-debugger branch
+**Last Updated**: 2025-12-21
+**Version**: Based on version2 branch
 **Model**: Documentation powered by Claude Sonnet 4.5

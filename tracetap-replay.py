@@ -129,12 +129,6 @@ def cmd_mock(args):
     if hasattr(args, 'diff') and args.diff:
         print(f"🔍 Diff tracking enabled (threshold: {args.diff_threshold}, limit: {args.diff_limit})")
 
-    # Show Faker status
-    if hasattr(args, 'faker') and args.faker:
-        locale_info = f"locale: {args.faker_locale}" if hasattr(args, 'faker_locale') else "locale: en_US"
-        seed_info = f", seed: {args.faker_seed}" if hasattr(args, 'faker_seed') and args.faker_seed else ""
-        print(f"🎲 Faker enabled ({locale_info}{seed_info})")
-
     # Show cache status
     cache_enabled = not (hasattr(args, 'no_cache') and args.no_cache)
     if cache_enabled:
@@ -166,9 +160,6 @@ def cmd_mock(args):
         diff_enabled=args.diff if hasattr(args, 'diff') else False,
         diff_threshold=args.diff_threshold if hasattr(args, 'diff_threshold') else 0.8,
         diff_limit=args.diff_limit if hasattr(args, 'diff_limit') else 100,
-        faker_enabled=args.faker if hasattr(args, 'faker') else False,
-        faker_locale=args.faker_locale if hasattr(args, 'faker_locale') else 'en_US',
-        faker_seed=args.faker_seed if hasattr(args, 'faker_seed') else None,
         cache_enabled=not (hasattr(args, 'no_cache') and args.no_cache),
         cache_max_size=args.cache_size if hasattr(args, 'cache_size') else 1000
     )
@@ -425,11 +416,8 @@ For more information: https://github.com/yourusername/tracetap
     mock_parser.add_argument('--chaos', action='store_true', help='Enable chaos engineering')
     mock_parser.add_argument('--chaos-rate', type=float, default=0.1, help='Chaos failure rate (default: 0.1)')
     mock_parser.add_argument('--ai', action='store_true', help='Enable AI-powered features (semantic matching, intelligent responses). Requires ANTHROPIC_API_KEY env var')
-    mock_parser.add_argument('--response-mode', choices=['static', 'template', 'transform', 'faker', 'ai', 'intelligent'],
+    mock_parser.add_argument('--response-mode', choices=['static', 'template', 'transform', 'ai', 'intelligent'],
                            default='static', help='Response generation mode (default: static)')
-    mock_parser.add_argument('--faker', action='store_true', help='Enable Faker for realistic data generation')
-    mock_parser.add_argument('--faker-locale', default='en_US', help='Faker locale (default: en_US)')
-    mock_parser.add_argument('--faker-seed', type=int, help='Faker seed for reproducible data')
     mock_parser.add_argument('--no-admin', action='store_true', help='Disable admin API')
     mock_parser.add_argument('--log-level', default='info', choices=['debug', 'info', 'warning', 'error'],
                            help='Log level (default: info)')

@@ -9,7 +9,6 @@ Features:
 - Response transformation and modification
 - AI-powered intelligent responses using Claude
 - Stateful response sequences
-- Data faker integration for realistic mock data
 """
 
 import json
@@ -20,17 +19,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from textwrap import dedent
 
-try:
-    import anthropic
-    ANTHROPIC_AVAILABLE = True
-except ImportError:
-    ANTHROPIC_AVAILABLE = False
-
-try:
-    from faker import Faker
-    FAKER_AVAILABLE = True
-except ImportError:
-    FAKER_AVAILABLE = False
+# Import common utilities for AI client
+from ..common import create_anthropic_client, ANTHROPIC_AVAILABLE
 
 
 @dataclass
@@ -118,10 +108,7 @@ class ResponseGenerator:
         self,
         use_ai: bool = False,
         api_key: Optional[str] = None,
-        default_transformers: Optional[List[Callable]] = None,
-        use_faker: bool = False,
-        faker_locale: str = "en_US",
-        faker_seed: Optional[int] = None
+        default_transformers: Optional[List[Callable]] = None
     ):
         """
         Initialize response generator.
@@ -130,9 +117,6 @@ class ResponseGenerator:
             use_ai: Enable AI-powered response generation
             api_key: Anthropic API key for Claude
             default_transformers: List of default transformation functions
-            use_faker: Enable Faker for realistic data generation
-            faker_locale: Locale for Faker (e.g., en_US, fr_FR)
-            faker_seed: Seed for Faker (for reproducible data)
         """
         self.use_ai = use_ai and ANTHROPIC_AVAILABLE
         self.client = None
@@ -140,25 +124,15 @@ class ResponseGenerator:
         self.transformers = default_transformers or []
         self.sequences = {}  # For stateful sequential responses
 
-        # Initialize Faker
-        self.use_faker = use_faker and FAKER_AVAILABLE
-        self.faker = None
-        if self.use_faker:
-            try:
-                self.faker = Faker(faker_locale)
-                if faker_seed is not None:
-                    self.faker.seed_instance(faker_seed)
-            except Exception:
-                self.use_faker = False
-
-        # Initialize Claude client
+        # Initialize Claude client using centralized utility
         if self.use_ai:
-            actual_api_key = api_key or os.environ.get('ANTHROPIC_API_KEY')
-            if actual_api_key:
-                try:
-                    self.client = anthropic.Anthropic(api_key=actual_api_key)
-                except Exception:
-                    self.use_ai = False
+            self.client, ai_initialized, _ = create_anthropic_client(
+                api_key=api_key,
+                raise_on_error=False,
+                verbose=False
+            )
+            if not ai_initialized:
+                self.use_ai = False
 
     def generate(
         self,
@@ -172,7 +146,7 @@ class ResponseGenerator:
         Args:
             capture: Captured request/response data
             request_context: Context from incoming request (path params, query, etc.)
-            mode: Generation mode (static, template, transform, faker, ai, intelligent)
+            mode: Generation mode (static, template, transform, ai, intelligent)
 
         Returns:
             Response dict with status, headers, body
@@ -183,8 +157,6 @@ class ResponseGenerator:
             return self._generate_from_template(capture, request_context or {})
         elif mode == "transform":
             return self._generate_transformed(capture, request_context or {})
-        elif mode == "faker":
-            return self._generate_faker(capture, request_context or {})
         elif mode == "ai":
             return self._generate_ai(capture, request_context or {})
         elif mode == "intelligent":
@@ -338,238 +310,6 @@ class ResponseGenerator:
             # Fallback to static on error
             return self._generate_static(capture)
 
-    def _generate_faker(
-        self,
-        capture: Dict[str, Any],
-        context: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """
-        Generate response with Faker realistic data.
-
-        Args:
-            capture: Captured request/response data
-            context: Request context
-
-        Returns:
-            Response dict with Faker-generated data
-        """
-        if not self.faker:
-            # Fallback to static if Faker not available
-            return self._generate_static(capture)
-
-        response = self._generate_static(capture)
-        body = response.get('resp_body', '')
-
-        if not body or not isinstance(body, str):
-            return response
-
-        try:
-            # Try to parse as JSON
-            data = json.loads(body)
-
-            # Generate realistic data
-            value_cache = {}  # Cache for consistent values within response
-            faked_data = self._faker_transform_value(data, value_cache)
-
-            # Update response
-            response['resp_body'] = json.dumps(faked_data)
-            response['resp_headers'] = response.get('resp_headers', {})
-            response['resp_headers']['x-generated-by'] = 'tracetap-faker'
-
-        except json.JSONDecodeError:
-            # Not JSON, return as-is
-            pass
-
-        return response
-
-    def _faker_transform_value(
-        self,
-        value: Any,
-        cache: Dict[str, Any],
-        key: str = ''
-    ) -> Any:
-        """
-        Recursively transform value using Faker.
-
-        Args:
-            value: Value to transform
-            cache: Cache for consistent values
-            key: Current key name (for type detection)
-
-        Returns:
-            Transformed value
-        """
-        if not self.faker:
-            return value
-
-        # Handle different value types
-        if isinstance(value, dict):
-            return {k: self._faker_transform_value(v, cache, k) for k, v in value.items()}
-        elif isinstance(value, list):
-            return [self._faker_transform_value(item, cache, key) for item in value]
-        elif isinstance(value, str):
-            return self._faker_generate_string(value, key.lower(), cache)
-        elif isinstance(value, (int, float)) and key:
-            return self._faker_generate_number(value, key.lower(), cache)
-        else:
-            return value
-
-    def _faker_generate_string(
-        self,
-        original: str,
-        key: str,
-        cache: Dict[str, Any]
-    ) -> str:
-        """
-        Generate realistic string value based on key name.
-
-        Args:
-            original: Original value
-            key: Field name
-            cache: Value cache for consistency
-
-        Returns:
-            Faker-generated string
-        """
-        if not self.faker:
-            return original
-
-        # Check cache first for consistency
-        cache_key = f"{key}:{original}"
-        if cache_key in cache:
-            return cache[key]
-
-        # Detect field type and generate appropriate data
-        generated = original
-
-        # Email detection
-        if 'email' in key or '@' in original:
-            generated = self.faker.email()
-
-        # Name detection
-        elif 'name' in key or 'username' in key:
-            if 'first' in key or 'fname' in key:
-                generated = self.faker.first_name()
-            elif 'last' in key or 'lname' in key:
-                generated = self.faker.last_name()
-            else:
-                generated = self.faker.name()
-
-        # Phone detection
-        elif 'phone' in key or 'mobile' in key or 'tel' in key:
-            generated = self.faker.phone_number()
-
-        # Address detection
-        elif 'address' in key or 'street' in key:
-            generated = self.faker.address()
-        elif 'city' in key:
-            generated = self.faker.city()
-        elif 'state' in key:
-            generated = self.faker.state()
-        elif 'zip' in key or 'postal' in key:
-            generated = self.faker.zipcode()
-        elif 'country' in key:
-            generated = self.faker.country()
-
-        # Company detection
-        elif 'company' in key or 'organization' in key:
-            generated = self.faker.company()
-
-        # URL detection
-        elif 'url' in key or 'website' in key or original.startswith('http'):
-            generated = self.faker.url()
-
-        # Description/text detection
-        elif 'description' in key or 'comment' in key or 'bio' in key:
-            generated = self.faker.text(max_nb_chars=len(original) if len(original) > 20 else 100)
-
-        # Title detection
-        elif 'title' in key or 'subject' in key:
-            generated = self.faker.sentence(nb_words=5).rstrip('.')
-
-        # UUID detection
-        elif 'uuid' in key or 'guid' in key or len(original) == 36:
-            generated = self.faker.uuid4()
-
-        # Date/time detection
-        elif 'date' in key or 'time' in key or 'created' in key or 'updated' in key:
-            if 'date' in key:
-                generated = self.faker.date()
-            else:
-                generated = self.faker.iso8601()
-
-        # Color detection
-        elif 'color' in key:
-            generated = self.faker.color_name()
-
-        # IP address detection
-        elif 'ip' in key or re.match(r'\d+\.\d+\.\d+\.\d+', original):
-            generated = self.faker.ipv4()
-
-        # Cache the generated value
-        cache[cache_key] = generated
-        return generated
-
-    def _faker_generate_number(
-        self,
-        original: Any,
-        key: str,
-        cache: Dict[str, Any]
-    ) -> Any:
-        """
-        Generate realistic number value based on key name.
-
-        Args:
-            original: Original value
-            key: Field name
-            cache: Value cache for consistency
-
-        Returns:
-            Faker-generated number
-        """
-        if not self.faker:
-            return original
-
-        # Check cache
-        cache_key = f"{key}:{original}"
-        if cache_key in cache:
-            return cache[cache_key]
-
-        generated = original
-
-        # ID detection (generate new ID)
-        if 'id' in key:
-            if isinstance(original, int):
-                generated = self.faker.random_int(min=1, max=999999)
-            else:
-                generated = self.faker.random_int(min=1, max=999999)
-
-        # Age detection
-        elif 'age' in key:
-            generated = self.faker.random_int(min=18, max=80)
-
-        # Price/amount detection
-        elif 'price' in key or 'amount' in key or 'cost' in key:
-            if isinstance(original, float):
-                generated = round(self.faker.random.uniform(1.0, 1000.0), 2)
-            else:
-                generated = self.faker.random_int(min=1, max=10000)
-
-        # Quantity/count detection
-        elif 'quantity' in key or 'count' in key or 'qty' in key:
-            generated = self.faker.random_int(min=1, max=100)
-
-        # Percentage detection
-        elif 'percent' in key or 'rate' in key:
-            if isinstance(original, float):
-                generated = round(self.faker.random.uniform(0.0, 100.0), 2)
-            else:
-                generated = self.faker.random_int(min=0, max=100)
-
-        # Cache and return
-        cache[cache_key] = generated
-        return generated
-
     def _create_generation_prompt(
         self,
         method: str,
@@ -680,61 +420,6 @@ class ResponseGenerator:
             return None
 
         return template.render(context)
-
-    def add_transformer(self, transformer: Callable):
-        """
-        Add a response transformer function.
-
-        Transformer signature: (response: Dict, context: Dict) -> Dict
-
-        Args:
-            transformer: Transformer function
-        """
-        self.transformers.append(transformer)
-
-    def create_sequence(self, name: str, responses: List[Dict[str, Any]]):
-        """
-        Create a named sequence of responses.
-
-        Each time this sequence is requested, it returns the next response
-        in the list (cycling back to start).
-
-        Args:
-            name: Sequence name
-            responses: List of response dicts
-        """
-        self.sequences[name] = {
-            'responses': responses,
-            'index': 0
-        }
-
-    def get_next_from_sequence(self, name: str) -> Optional[Dict[str, Any]]:
-        """
-        Get next response from named sequence.
-
-        Args:
-            name: Sequence name
-
-        Returns:
-            Next response or None if sequence not found
-        """
-        if name not in self.sequences:
-            return None
-
-        sequence = self.sequences[name]
-        responses = sequence['responses']
-        index = sequence['index']
-
-        if not responses:
-            return None
-
-        # Get current response
-        response = responses[index]
-
-        # Advance index (cycling)
-        sequence['index'] = (index + 1) % len(responses)
-
-        return response
 
     def generate_intelligent(
         self,

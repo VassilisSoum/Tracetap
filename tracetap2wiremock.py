@@ -17,14 +17,7 @@ import hashlib
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
-from tracetap.common import safe_json_parse, get_api_key_from_env
-
-try:
-    import anthropic
-
-    ANTHROPIC_AVAILABLE = True
-except ImportError:
-    ANTHROPIC_AVAILABLE = False
+from tracetap.common import safe_json_parse, create_anthropic_client
 
 
 class AIWireMockGenerator:
@@ -37,28 +30,11 @@ class AIWireMockGenerator:
         Note:
             SECURITY: API key must be set via ANTHROPIC_API_KEY environment variable.
         """
-        self.client = None
-        self.ai_available = False
-
-        if not ANTHROPIC_AVAILABLE:
-            print("⚠ Claude AI not available: anthropic library not installed")
-            print("  Install: pip install anthropic")
-            return
-
-        # SECURITY: Get API key from environment only (never accept via CLI)
-        api_key = get_api_key_from_env()
-        if not api_key:
-            print("⚠ Claude AI not available: ANTHROPIC_API_KEY not set")
-            print("  Set: export ANTHROPIC_API_KEY=your_key")
-            print("  Get key: https://console.anthropic.com/")
-            return
-
-        try:
-            self.client = anthropic.Anthropic(api_key=api_key)
-            self.ai_available = True
-            print("✓ Claude AI enabled")
-        except Exception as e:
-            print(f"⚠ Claude AI initialization failed: {e}")
+        # Use centralized AI client initialization
+        self.client, self.ai_available, _ = create_anthropic_client(
+            raise_on_error=False,
+            verbose=True
+        )
 
     def analyze_and_generate_stubs(self,
                                    flow_data: Dict[str, Any],

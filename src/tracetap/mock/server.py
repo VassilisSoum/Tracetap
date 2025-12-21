@@ -11,7 +11,10 @@ Features:
 - Metrics and logging
 """
 
+from __future__ import annotations  # Enable forward references for type hints
+
 import json
+import re
 import time
 import asyncio
 from pathlib import Path
@@ -63,11 +66,6 @@ class MockConfig:
     diff_enabled: bool = False  # Track diffs for failed/low-score matches
     diff_threshold: float = 0.8  # Show diff if match score below this (0.0-1.0)
     diff_limit: int = 100  # Maximum number of diffs to store (0 = unlimited)
-
-    # Faker integration
-    faker_enabled: bool = False  # Enable Faker for realistic data generation
-    faker_locale: str = "en_US"  # Locale for Faker (e.g., en_US, fr_FR, de_DE)
-    faker_seed: Optional[int] = None  # Seed for reproducible data (None = random)
 
     # Match result caching
     cache_enabled: bool = True  # Enable match result caching for performance
@@ -185,10 +183,7 @@ class MockServer:
         )
         self.generator = response_generator or ResponseGenerator(
             use_ai=self.config.ai_enabled,
-            api_key=self.config.ai_api_key,
-            use_faker=self.config.faker_enabled,
-            faker_locale=self.config.faker_locale,
-            faker_seed=self.config.faker_seed
+            api_key=self.config.ai_api_key
         )
 
         # Setup FastAPI app
@@ -519,6 +514,9 @@ class MockServer:
         if self.config.cache_enabled:
             cache_hit = self.matcher.cache_hits > cache_hits_before
 
+        # Extract request context for template mode
+        request_context = self._extract_request_context(url, body)
+
         # Verbose logging - match details
         if self.config.verbose_mode:
             if matched_capture:
@@ -581,6 +579,7 @@ class MockServer:
             self.metrics.matched_requests += 1
             response = self._create_response(
                 matched_capture,
+                request_context=request_context,
                 match_score=match_result.score.total_score if match_result.score else None,
                 matched_url=matched_capture.get('url'),
                 cache_hit=cache_hit
@@ -655,41 +654,10 @@ class MockServer:
 
         return response
 
-    def _find_match(
-        self,
-        method: str,
-        url: str,
-        headers: Dict[str, str],
-        body: bytes
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Find matching capture for request.
-
-        Args:
-            method: HTTP method
-            url: Request URL
-            headers: Request headers
-            body: Request body
-
-        Returns:
-            Matching capture dict or None
-        """
-        # Use RequestMatcher for intelligent matching
-        match_result = self.matcher.find_match(method, url, headers, body)
-
-        if match_result.matched:
-            self.logger.debug(
-                f"Matched: {method} {url} -> {match_result.capture.get('url')} "
-                f"(score: {match_result.score.total_score:.2f})"
-            )
-            return match_result.capture
-        else:
-            self.logger.debug(f"No match: {method} {url} - {match_result.reason}")
-            return None
-
     def _create_response(
         self,
         capture: Dict[str, Any],
+        request_context: Optional[Dict[str, Any]] = None,
         match_score: Optional[float] = None,
         matched_url: Optional[str] = None,
         cache_hit: bool = False
@@ -699,6 +667,7 @@ class MockServer:
 
         Args:
             capture: Captured request/response data
+            request_context: Context variables for template substitution
             match_score: Match score (0.0 to 1.0) for debugging
             matched_url: Original URL of the matched capture
             cache_hit: Whether this was served from cache
@@ -707,7 +676,7 @@ class MockServer:
             FastAPI Response object with TraceTap debug headers
         """
         # Use generator to create response (uses configured mode: static, template, transform, ai, intelligent)
-        generated = self.generator.generate(capture, mode=self.config.response_mode)
+        generated = self.generator.generate(capture, request_context, mode=self.config.response_mode)
 
         # Extract response data
         status_code = generated.get('status', 200)
@@ -761,6 +730,56 @@ class MockServer:
         """Determine if chaos engineering should trigger."""
         import random
         return random.random() < self.config.chaos_failure_rate
+
+    def _extract_request_context(self, url: str, body: bytes) -> Dict[str, Any]:
+        """
+        Extract context from incoming request for template variable substitution.
+
+        Extracts:
+        - Query parameters from URL
+        - Path parameters (numeric IDs, UUIDs) from URL path
+        - JSON body fields (if valid JSON)
+
+        Args:
+            url: Full request URL
+            body: Request body bytes
+
+        Returns:
+            Dictionary of context variables for template substitution
+        """
+        context = {}
+
+        # Parse URL
+        parsed = urlparse(url)
+
+        # Extract query parameters
+        query_params = parse_qs(parsed.query)
+        for key, values in query_params.items():
+            # Use first value if single, otherwise use list
+            context[key] = values[0] if len(values) == 1 else values
+
+        # Extract path parameters (numeric IDs and UUIDs)
+        path_parts = [p for p in parsed.path.split('/') if p]
+        for part in path_parts:
+            # Detect numeric IDs
+            if part.isdigit():
+                context['id'] = part
+            # Detect UUIDs (simple pattern match)
+            elif re.match(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', part, re.I):
+                context['uuid'] = part
+
+        # Parse JSON body and add fields to context
+        if body:
+            try:
+                body_json = json.loads(body)
+                if isinstance(body_json, dict):
+                    # Add all body fields to context
+                    context.update(body_json)
+            except (json.JSONDecodeError, TypeError):
+                # Not JSON or invalid, skip body parsing
+                pass
+
+        return context
 
     def _record_request(
         self,
@@ -1222,10 +1241,7 @@ def create_mock_server(
     recording_limit: int = 1000,
     diff_enabled: bool = False,
     diff_threshold: float = 0.8,
-    diff_limit: int = 100,
-    faker_enabled: bool = False,
-    faker_locale: str = "en_US",
-    faker_seed: Optional[int] = None
+    diff_limit: int = 100
 ) -> MockServer:
     """
     Convenience function to create and configure a mock server.
@@ -1246,9 +1262,6 @@ def create_mock_server(
         diff_enabled: Enable request diff tracking
         diff_threshold: Track diffs when match score below this (0.0-1.0)
         diff_limit: Maximum diffs to store (0 = unlimited)
-        faker_enabled: Enable Faker for realistic data generation
-        faker_locale: Faker locale (e.g., en_US, fr_FR, de_DE)
-        faker_seed: Faker seed for reproducible data (None = random)
 
     Returns:
         Configured MockServer instance
@@ -1280,10 +1293,7 @@ def create_mock_server(
         recording_limit=recording_limit,
         diff_enabled=diff_enabled,
         diff_threshold=diff_threshold,
-        diff_limit=diff_limit,
-        faker_enabled=faker_enabled,
-        faker_locale=faker_locale,
-        faker_seed=faker_seed
+        diff_limit=diff_limit
     )
 
     return MockServer(log_file, config=config)

@@ -506,19 +506,18 @@ class TestAIScenarioGenerator:
         assert generator.ai_available is False
         assert generator.client is None
 
-    @patch('src.tracetap.replay.replay_config.anthropic.Anthropic')
-    def test_generator_initialization_with_key(self, mock_anthropic):
+    @patch('src.tracetap.common.ai_utils.create_anthropic_client')
+    def test_generator_initialization_with_key(self, mock_create_client):
         """Test initialization with API key."""
         mock_client = Mock()
-        mock_anthropic.return_value = mock_client
+        mock_create_client.return_value = (mock_client, True, "AI enabled")
 
         generator = AIScenarioGenerator(api_key='test-key')
 
         assert generator.ai_available is True
         assert generator.client is not None
 
-    @patch('src.tracetap.replay.replay_config.anthropic.Anthropic')
-    def test_generate_scenario_success(self, mock_anthropic):
+    def test_generate_scenario_success(self):
         """Test generating scenario with AI."""
         # Create proper YAML content
         yaml_content = '''name: "User Flow"
@@ -540,9 +539,11 @@ steps:
 
         mock_client = Mock()
         mock_client.messages.create.return_value = mock_response
-        mock_anthropic.return_value = mock_client
 
         generator = AIScenarioGenerator(api_key='test-key')
+        # Manually set AI attributes to bypass ANTHROPIC_AVAILABLE check
+        generator.ai_available = True
+        generator.client = mock_client
 
         captures = [
             {
