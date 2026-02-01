@@ -16,6 +16,7 @@ from urllib.parse import urlparse, parse_qs
 
 # Reuse schema inferrer from assertion builder
 from ..generators.assertion_builder import SchemaInferrer
+from ..common.progress import ProgressBar, StatusLine
 
 
 class ContractCreator:
@@ -44,12 +45,13 @@ class ContractCreator:
         self.base_url = base_url
         self.schema_inferrer = SchemaInferrer()
 
-    def create_contract(self, requests: List[Dict]) -> Dict[str, Any]:
+    def create_contract(self, requests: List[Dict], verbose: bool = False) -> Dict[str, Any]:
         """
         Create OpenAPI 3.0 contract from captured requests
 
         Args:
             requests: List of captured HTTP requests
+            verbose: Show progress indicators
 
         Returns:
             OpenAPI 3.0 specification as dictionary
@@ -57,7 +59,12 @@ class ContractCreator:
         if not requests:
             return self._empty_contract()
 
+        status = StatusLine(verbose)
+
         # Extract base URL if not provided
+        status.start(f"Analyzing {len(requests)} requests...")
+        progress = ProgressBar(len(requests), label="Analyzing", width=20)
+
         if not self.base_url and requests:
             first_url = requests[0].get('url', '')
             if first_url:
@@ -66,8 +73,13 @@ class ContractCreator:
 
         # Group requests by endpoint
         endpoint_groups = self._group_by_endpoint(requests)
+        progress.finish()
+        status.progress(f"Found {len(endpoint_groups)} unique endpoints")
 
         # Build paths section
+        status.start("Generating OpenAPI operations...")
+        progress = ProgressBar(len(endpoint_groups), label="Operations", width=20)
+
         paths = {}
         for endpoint_key, endpoint_requests in endpoint_groups.items():
             method, path_template = self._parse_endpoint_key(endpoint_key)
@@ -80,8 +92,11 @@ class ContractCreator:
                 path_template,
                 endpoint_requests
             )
+            progress.update()
+        progress.finish()
 
         # Build complete OpenAPI spec
+        status.start("Building OpenAPI specification...")
         spec = {
             'openapi': '3.0.0',
             'info': {
@@ -101,19 +116,23 @@ class ContractCreator:
 
         return spec
 
-    def save_contract(self, requests: List[Dict], output_file: str) -> bool:
+    def save_contract(self, requests: List[Dict], output_file: str, verbose: bool = False) -> bool:
         """
         Create and save contract to YAML file
 
         Args:
             requests: List of captured requests
             output_file: Path to save contract YAML
+            verbose: Show progress indicators
 
         Returns:
             True if successful, False otherwise
         """
         try:
-            contract = self.create_contract(requests)
+            contract = self.create_contract(requests, verbose=verbose)
+
+            status = StatusLine(verbose)
+            status.start("Writing contract file...")
 
             output_path = Path(output_file)
             output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -534,7 +553,10 @@ def create_contract_from_traffic(
         True if successful, False otherwise
     """
     try:
+        status = StatusLine(verbose)
+
         # Load traffic
+        status.start(f"Loading traffic from {json_file}...")
         with open(json_file, 'r') as f:
             data = json.load(f)
 
@@ -558,28 +580,33 @@ def create_contract_from_traffic(
 
         # Create contract
         creator = ContractCreator(title=title, version=version, base_url=base_url)
-        success = creator.save_contract(requests, output_file)
+        success = creator.save_contract(requests, output_file, verbose=verbose)
 
         if success and verbose:
-            print(f"✓ Contract saved to {output_file}")
+            print()
+            status.success(f"Contract created ({len(requests)} requests analyzed)")
 
             # Count endpoints
-            contract = creator.create_contract(requests)
+            contract = creator.create_contract(requests, verbose=False)
             endpoint_count = sum(len(methods) for methods in contract.get('paths', {}).values())
-            print(f"  - {endpoint_count} endpoints documented")
-            print(f"  - OpenAPI 3.0 specification")
+            print(f"  • {endpoint_count} endpoints documented")
+            print(f"  • Saved to {output_file}")
+            print(f"  • OpenAPI 3.0 specification")
 
         return success
 
     except FileNotFoundError:
         if verbose:
-            print(f"Error: File not found: {json_file}")
+            status = StatusLine(verbose)
+            status.error(f"File not found: {json_file}")
         return False
     except json.JSONDecodeError as e:
         if verbose:
-            print(f"Error: Invalid JSON in {json_file}: {e}")
+            status = StatusLine(verbose)
+            status.error(f"Invalid JSON in {json_file}: {e}")
         return False
     except Exception as e:
         if verbose:
-            print(f"Error creating contract: {e}")
+            status = StatusLine(verbose)
+            status.error(f"Error creating contract: {e}")
         return False

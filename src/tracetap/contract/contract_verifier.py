@@ -11,6 +11,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+from ..common.progress import ProgressBar, StatusLine
+
 
 class Severity(Enum):
     """Change severity levels"""
@@ -72,7 +74,8 @@ class ContractVerifier:
     def verify(
         self,
         baseline_contract: Dict[str, Any],
-        current_contract: Dict[str, Any]
+        current_contract: Dict[str, Any],
+        verbose: bool = False
     ) -> List[Change]:
         """
         Verify contract compatibility
@@ -80,29 +83,42 @@ class ContractVerifier:
         Args:
             baseline_contract: Original/baseline OpenAPI contract
             current_contract: New/current OpenAPI contract
+            verbose: Show progress indicators
 
         Returns:
             List of detected changes
         """
         self.changes = []
+        status = StatusLine(verbose)
 
         # Verify paths (endpoints)
-        self._verify_paths(
-            baseline_contract.get('paths', {}),
-            current_contract.get('paths', {})
-        )
+        baseline_paths = baseline_contract.get('paths', {})
+        current_paths = current_contract.get('paths', {})
+
+        status.start(f"Comparing {len(baseline_paths)} endpoints...")
+        progress = ProgressBar(len(baseline_paths), label="Endpoints", width=20)
+
+        self._verify_paths(baseline_paths, current_paths)
+
+        progress.finish()
+        status.progress(f"Detected {len(self.changes)} changes so far")
 
         # Verify components/schemas
         baseline_schemas = baseline_contract.get('components', {}).get('schemas', {})
         current_schemas = current_contract.get('components', {}).get('schemas', {})
-        self._verify_schemas(baseline_schemas, current_schemas)
+
+        if baseline_schemas or current_schemas:
+            status.start(f"Comparing schemas...")
+            self._verify_schemas(baseline_schemas, current_schemas)
+            status.progress(f"Total changes: {len(self.changes)}")
 
         return self.changes
 
     def verify_files(
         self,
         baseline_file: str,
-        current_file: str
+        current_file: str,
+        verbose: bool = False
     ) -> List[Change]:
         """
         Verify contracts from YAML/JSON files
@@ -110,14 +126,20 @@ class ContractVerifier:
         Args:
             baseline_file: Path to baseline contract
             current_file: Path to current contract
+            verbose: Show progress indicators
 
         Returns:
             List of detected changes
         """
+        status = StatusLine(verbose)
+
+        status.start(f"Loading baseline contract...")
         baseline = self._load_contract(baseline_file)
+
+        status.start(f"Loading current contract...")
         current = self._load_contract(current_file)
 
-        return self.verify(baseline, current)
+        return self.verify(baseline, current, verbose=verbose)
 
     def has_breaking_changes(self) -> bool:
         """Check if there are any breaking changes"""
@@ -666,18 +688,26 @@ def verify_contracts(
     Returns:
         Tuple of (is_compatible, changes)
     """
+    status = StatusLine(verbose)
+
+    status.start("Verifying contracts...")
     verifier = ContractVerifier()
-    changes = verifier.verify_files(baseline_file, current_file)
+    changes = verifier.verify_files(baseline_file, current_file, verbose=verbose)
 
     is_compatible = not verifier.has_breaking_changes()
 
     if verbose:
-        status = "✓ Compatible" if is_compatible else "✗ Breaking changes detected"
-        print(f"Contract Verification: {status}")
-        print(f"  - {len(changes)} total changes")
-        print(f"  - {sum(1 for c in changes if c.severity == Severity.BREAKING)} breaking")
-        print(f"  - {sum(1 for c in changes if c.severity == Severity.WARNING)} warnings")
-        print(f"  - {sum(1 for c in changes if c.severity == Severity.INFO)} info")
+        print()
+        if is_compatible:
+            status.success("Contracts are compatible - no breaking changes")
+        else:
+            status.error("Breaking changes detected!")
+
+        print(f"\nChanges detected:")
+        print(f"  • {len(changes)} total changes")
+        print(f"  • {sum(1 for c in changes if c.severity == Severity.BREAKING)} breaking")
+        print(f"  • {sum(1 for c in changes if c.severity == Severity.WARNING)} warnings")
+        print(f"  • {sum(1 for c in changes if c.severity == Severity.INFO)} info")
 
     # Generate report
     report = verifier.get_report(format=format)
@@ -685,7 +715,7 @@ def verify_contracts(
     if output_file:
         Path(output_file).write_text(report)
         if verbose:
-            print(f"  - Report saved to {output_file}")
+            status.progress(f"Report saved to {output_file}")
 
     if verbose and not is_compatible:
         print("\n" + report)

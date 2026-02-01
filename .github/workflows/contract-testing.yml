@@ -1,0 +1,395 @@
+name: Contract Testing
+
+# This workflow performs API contract testing by:
+# 1. Capturing traffic from API tests
+# 2. Generating OpenAPI contracts from captured traffic
+# 3. Comparing against baseline contracts
+# 4. Detecting and failing on breaking changes
+# 5. Posting detailed diff reports as PR comments
+#
+# Example Usage:
+#   - Automatically runs on pull requests
+#   - Uses tracetap to capture API test traffic
+#   - Generates contract: python3 tracetap-replay.py create-contract traffic.json -o contract.yaml
+#   - Verifies compatibility: python3 tracetap-replay.py verify-contract baseline.yaml current.yaml --fail-on-breaking
+#   - Custom baseline path: Set BASELINE_CONTRACT_PATH environment variable
+#   - Manual trigger: workflow_dispatch event
+#
+# Configuration:
+#   - BASELINE_CONTRACT_PATH: Path to baseline contract (default: contracts/baseline-contract.yaml)
+#   - TRAFFIC_CAPTURE_PATH: Path where test traffic is captured (default: test-traffic.json)
+#   - Python version: 3.12 (configurable)
+
+on:
+  pull_request:
+    branches: [ master, main ]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - '.github/workflows/contract-testing.yml'
+  workflow_dispatch:
+    inputs:
+      baseline_path:
+        description: 'Custom baseline contract path'
+        required: false
+        default: 'contracts/baseline-contract.yaml'
+      fail_on_breaking:
+        description: 'Fail on breaking changes'
+        required: false
+        default: 'true'
+        type: boolean
+
+env:
+  # Default paths - can be overridden by workflow inputs or repository variables
+  BASELINE_CONTRACT_PATH: ${{ github.event.inputs.baseline_path || vars.BASELINE_CONTRACT_PATH || 'contracts/baseline-contract.yaml' }}
+  TRAFFIC_CAPTURE_PATH: 'test-traffic.json'
+  CURRENT_CONTRACT_PATH: 'contracts/current-contract.yaml'
+  DIFF_REPORT_PATH: 'contracts/contract-diff.md'
+  PYTHON_VERSION: '3.12'
+
+jobs:
+  contract-test:
+    name: API Contract Testing
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write  # Required for posting PR comments
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch full history for baseline comparison
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+          # Install additional dependencies for contract testing
+          pip install pyyaml
+
+      - name: Create contracts directory
+        run: |
+          mkdir -p contracts
+          echo "📁 Created contracts directory"
+
+      - name: Check for baseline contract
+        id: check_baseline
+        run: |
+          if [ -f "${{ env.BASELINE_CONTRACT_PATH }}" ]; then
+            echo "baseline_exists=true" >> $GITHUB_OUTPUT
+            echo "✓ Found baseline contract at: ${{ env.BASELINE_CONTRACT_PATH }}"
+          else
+            echo "baseline_exists=false" >> $GITHUB_OUTPUT
+            echo "⚠️  No baseline contract found at: ${{ env.BASELINE_CONTRACT_PATH }}"
+            echo "   This workflow will generate a new baseline from captured traffic"
+          fi
+
+      - name: Run API tests with traffic capture
+        id: capture_traffic
+        run: |
+          set -e
+
+          echo "🧪 Running API tests with traffic capture..."
+
+          # Run pytest with tracetap enabled to capture traffic
+          # The tests should configure tracetap to write to $TRAFFIC_CAPTURE_PATH
+          export TRACETAP_OUTPUT="${{ env.TRAFFIC_CAPTURE_PATH }}"
+
+          if pytest tests/ -v --tb=short; then
+            echo "test_status=success" >> $GITHUB_OUTPUT
+            echo "✓ Tests passed successfully"
+          else
+            echo "test_status=failed" >> $GITHUB_OUTPUT
+            echo "✗ Tests failed"
+            exit 1
+          fi
+
+          # Verify traffic was captured
+          if [ -f "${{ env.TRAFFIC_CAPTURE_PATH }}" ]; then
+            CAPTURE_COUNT=$(python3 -c "import json; print(len(json.load(open('${{ env.TRAFFIC_CAPTURE_PATH }}')))) if isinstance(json.load(open('${{ env.TRAFFIC_CAPTURE_PATH }}')), list) else print(1)")
+            echo "captures=$CAPTURE_COUNT" >> $GITHUB_OUTPUT
+            echo "✓ Captured $CAPTURE_COUNT API interactions"
+          else
+            echo "✗ No traffic captured at ${{ env.TRAFFIC_CAPTURE_PATH }}"
+            echo "  Make sure your tests are configured to use tracetap"
+            exit 1
+          fi
+
+      - name: Generate current contract from traffic
+        id: generate_contract
+        run: |
+          set -e
+
+          echo "📋 Generating OpenAPI contract from captured traffic..."
+
+          python3 tracetap-replay.py create-contract \
+            "${{ env.TRAFFIC_CAPTURE_PATH }}" \
+            -o "${{ env.CURRENT_CONTRACT_PATH }}" \
+            --title "Tracetap API" \
+            --version "${{ github.event.pull_request.head.sha || github.sha }}" \
+            --verbose
+
+          if [ -f "${{ env.CURRENT_CONTRACT_PATH }}" ]; then
+            echo "contract_created=true" >> $GITHUB_OUTPUT
+            echo "✓ Contract generated at: ${{ env.CURRENT_CONTRACT_PATH }}"
+
+            # Extract endpoint count
+            ENDPOINT_COUNT=$(python3 -c "import yaml; c=yaml.safe_load(open('${{ env.CURRENT_CONTRACT_PATH }}')); print(len(c.get('paths', {})))")
+            echo "endpoints=$ENDPOINT_COUNT" >> $GITHUB_OUTPUT
+            echo "  Endpoints documented: $ENDPOINT_COUNT"
+          else
+            echo "contract_created=false" >> $GITHUB_OUTPUT
+            echo "✗ Failed to generate contract"
+            exit 1
+          fi
+
+      - name: Create baseline contract if missing
+        if: steps.check_baseline.outputs.baseline_exists == 'false'
+        run: |
+          echo "📝 Creating new baseline contract..."
+          cp "${{ env.CURRENT_CONTRACT_PATH }}" "${{ env.BASELINE_CONTRACT_PATH }}"
+          echo "✓ Baseline contract created at: ${{ env.BASELINE_CONTRACT_PATH }}"
+          echo ""
+          echo "⚠️  IMPORTANT: This is the first contract test run."
+          echo "   The current contract has been saved as the baseline."
+          echo "   Commit this file to establish the baseline for future comparisons."
+
+      - name: Verify contract compatibility
+        id: verify_contract
+        if: steps.check_baseline.outputs.baseline_exists == 'true'
+        continue-on-error: true
+        run: |
+          set -e
+
+          echo "🔍 Verifying contract compatibility..."
+          echo "   Baseline: ${{ env.BASELINE_CONTRACT_PATH }}"
+          echo "   Current:  ${{ env.CURRENT_CONTRACT_PATH }}"
+          echo ""
+
+          # Run verification and capture exit code
+          if python3 tracetap-replay.py verify-contract \
+            "${{ env.BASELINE_CONTRACT_PATH }}" \
+            "${{ env.CURRENT_CONTRACT_PATH }}" \
+            -o "${{ env.DIFF_REPORT_PATH }}" \
+            --format markdown \
+            --fail-on-breaking \
+            --verbose; then
+            echo "verification_result=compatible" >> $GITHUB_OUTPUT
+            echo "breaking_changes=false" >> $GITHUB_OUTPUT
+            echo "✓ Contracts are compatible - no breaking changes"
+          else
+            VERIFY_EXIT_CODE=$?
+            echo "verification_result=incompatible" >> $GITHUB_OUTPUT
+            echo "breaking_changes=true" >> $GITHUB_OUTPUT
+            echo "exit_code=$VERIFY_EXIT_CODE" >> $GITHUB_OUTPUT
+            echo "✗ Breaking changes detected!"
+          fi
+
+      - name: Generate markdown report
+        id: generate_report
+        if: always() && steps.generate_contract.outputs.contract_created == 'true'
+        run: |
+          set -e
+
+          echo "📊 Generating contract test report..."
+
+          # Create comprehensive markdown report
+          cat > contract-report.md << 'EOF'
+          ## 📋 Contract Testing Report
+
+          ### Test Summary
+          - **Tests**: ${{ steps.capture_traffic.outputs.test_status }}
+          - **API Captures**: ${{ steps.capture_traffic.outputs.captures }} interactions
+          - **Endpoints**: ${{ steps.generate_contract.outputs.endpoints }} documented
+          - **Baseline**: ${{ steps.check_baseline.outputs.baseline_exists == 'true' && 'Found' || 'Created (first run)' }}
+          - **Compatibility**: ${{ steps.verify_contract.outputs.verification_result || 'N/A (baseline created)' }}
+
+          EOF
+
+          # Add breaking changes section if applicable
+          if [ "${{ steps.verify_contract.outputs.breaking_changes }}" = "true" ]; then
+            cat >> contract-report.md << 'EOF'
+          ### ⚠️ Breaking Changes Detected
+
+          The current API contract contains breaking changes compared to the baseline.
+          Review the detailed diff below and ensure these changes are intentional.
+
+          EOF
+          fi
+
+          # Append detailed diff if available
+          if [ -f "${{ env.DIFF_REPORT_PATH }}" ]; then
+            echo "" >> contract-report.md
+            echo "### Detailed Contract Diff" >> contract-report.md
+            echo "" >> contract-report.md
+            cat "${{ env.DIFF_REPORT_PATH }}" >> contract-report.md
+          fi
+
+          # Add footer
+          cat >> contract-report.md << 'EOF'
+
+          ---
+
+          <details>
+          <summary>📝 How to interpret this report</summary>
+
+          **Breaking Changes** include:
+          - Removed endpoints or operations
+          - Removed required parameters
+          - Changed parameter types
+          - Removed response fields
+          - Changed response status codes
+
+          **Non-Breaking Changes** include:
+          - New endpoints or operations
+          - New optional parameters
+          - New response fields
+          - Additional response status codes
+
+          </details>
+
+          <details>
+          <summary>🔧 How to update the baseline</summary>
+
+          If the breaking changes are intentional:
+
+          1. Review and approve the changes
+          2. Update the baseline contract:
+             ```bash
+             cp ${{ env.CURRENT_CONTRACT_PATH }} ${{ env.BASELINE_CONTRACT_PATH }}
+             git add ${{ env.BASELINE_CONTRACT_PATH }}
+             git commit -m "Update API contract baseline"
+             ```
+          3. Re-run the workflow
+
+          </details>
+          EOF
+
+          echo "✓ Report generated at: contract-report.md"
+
+      - name: Upload contract artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: contract-testing-artifacts
+          path: |
+            ${{ env.TRAFFIC_CAPTURE_PATH }}
+            ${{ env.CURRENT_CONTRACT_PATH }}
+            ${{ env.BASELINE_CONTRACT_PATH }}
+            ${{ env.DIFF_REPORT_PATH }}
+            contract-report.md
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Post PR comment
+        if: github.event_name == 'pull_request' && steps.generate_report.conclusion == 'success'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+
+            // Read the generated report
+            let reportBody;
+            try {
+              reportBody = fs.readFileSync('contract-report.md', 'utf8');
+            } catch (error) {
+              console.error('Failed to read report:', error);
+              reportBody = '❌ Failed to generate contract testing report';
+            }
+
+            // Find existing comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body.includes('📋 Contract Testing Report')
+            );
+
+            // Create or update comment
+            const commentPayload = {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: reportBody,
+            };
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                ...commentPayload,
+                comment_id: botComment.id,
+              });
+              console.log('Updated existing PR comment');
+            } else {
+              await github.rest.issues.createComment({
+                ...commentPayload,
+                issue_number: context.issue.number,
+              });
+              console.log('Created new PR comment');
+            }
+
+      - name: Check contract compatibility result
+        if: steps.check_baseline.outputs.baseline_exists == 'true'
+        run: |
+          if [ "${{ steps.verify_contract.outputs.breaking_changes }}" = "true" ]; then
+            echo ""
+            echo "❌ FAILED: Breaking changes detected in API contract"
+            echo ""
+            echo "The API contract verification found breaking changes."
+            echo "Review the contract diff in the PR comment or artifacts."
+            echo ""
+            echo "If these changes are intentional:"
+            echo "  1. Review and approve the changes"
+            echo "  2. Update the baseline contract"
+            echo "  3. Commit the updated baseline"
+            echo ""
+
+            # Check if we should fail the build
+            SHOULD_FAIL="${{ github.event.inputs.fail_on_breaking || 'true' }}"
+            if [ "$SHOULD_FAIL" = "true" ]; then
+              exit 1
+            else
+              echo "⚠️  Not failing due to configuration, but breaking changes exist"
+            fi
+          else
+            echo ""
+            echo "✓ SUCCESS: API contract is compatible"
+            echo ""
+          fi
+
+      - name: Print summary
+        if: always()
+        run: |
+          echo ""
+          echo "════════════════════════════════════════════════════════════════"
+          echo "                   Contract Testing Summary"
+          echo "════════════════════════════════════════════════════════════════"
+          echo ""
+          echo "📊 Metrics:"
+          echo "   • Tests: ${{ steps.capture_traffic.outputs.test_status || 'N/A' }}"
+          echo "   • Captures: ${{ steps.capture_traffic.outputs.captures || 'N/A' }}"
+          echo "   • Endpoints: ${{ steps.generate_contract.outputs.endpoints || 'N/A' }}"
+          echo ""
+          echo "📋 Contracts:"
+          echo "   • Baseline: ${{ env.BASELINE_CONTRACT_PATH }}"
+          echo "   • Current: ${{ env.CURRENT_CONTRACT_PATH }}"
+          echo ""
+          echo "🔍 Verification:"
+          echo "   • Status: ${{ steps.verify_contract.outputs.verification_result || 'Baseline created' }}"
+          echo "   • Breaking Changes: ${{ steps.verify_contract.outputs.breaking_changes || 'false' }}"
+          echo ""
+          echo "📦 Artifacts uploaded to workflow run"
+          echo "════════════════════════════════════════════════════════════════"
+          echo ""

@@ -1,0 +1,210 @@
+openapi: 3.0.0
+info:
+  title: Example API
+  version: 1.0.0
+  description: Baseline API contract for testing
+servers:
+  - url: https://api.example.com
+paths:
+  /users:
+    get:
+      summary: Get all users
+      operationId: getUsers
+      tags:
+        - users
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Maximum number of users to return
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Number of users to skip
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    name:
+                      type: string
+                    email:
+                      type: string
+                    role:
+                      type: string
+                  required:
+                    - id
+                    - name
+                    - email
+        '404':
+          description: Not found
+    post:
+      summary: Create user
+      operationId: postUsers
+      tags:
+        - users
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                email:
+                  type: string
+                password:
+                  type: string
+              required:
+                - name
+                - email
+                - password
+      responses:
+        '201':
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  name:
+                    type: string
+                  email:
+                    type: string
+                required:
+                  - id
+                  - name
+                  - email
+        '400':
+          description: Bad request
+  /users/{id}:
+    get:
+      summary: Get user by ID
+      operationId: getUsersId
+      tags:
+        - users
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The id parameter
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  name:
+                    type: string
+                  email:
+                    type: string
+                  role:
+                    type: string
+                  createdAt:
+                    type: string
+                required:
+                  - id
+                  - name
+                  - email
+        '404':
+          description: Resource not found
+    put:
+      summary: Update user
+      operationId: putUsersId
+      tags:
+        - users
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The id parameter
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                email:
+                  type: string
+      responses:
+        '200':
+          description: Successful response
+        '404':
+          description: Resource not found
+    delete:
+      summary: Delete user
+      operationId: deleteUsersId
+      tags:
+        - users
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The id parameter
+      responses:
+        '204':
+          description: No content
+        '404':
+          description: Resource not found
+  /orders:
+    get:
+      summary: Get all orders
+      operationId: getOrders
+      tags:
+        - orders
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    userId:
+                      type: integer
+                    total:
+                      type: number
+                    status:
+                      type: string
+                  required:
+                    - id
+                    - userId
+                    - total
+components:
+  schemas: {}
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
