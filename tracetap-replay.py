@@ -39,6 +39,7 @@ from tracetap.replay import TrafficReplayer, VariableExtractor, ReplayConfig
 from tracetap.replay.replay_config import AIScenarioGenerator
 from tracetap.mock import MockServer, MockConfig, create_mock_server
 from tracetap.common import get_api_key_from_env, CaptureLoader
+from tracetap.generators.regression_generator import generate_regression_tests
 
 
 def cmd_replay(args):
@@ -364,6 +365,77 @@ def cmd_validate(args):
         sys.exit(1)
 
 
+def cmd_generate_regression(args):
+    """
+    Generate Playwright regression tests from captured traffic.
+
+    Args:
+        args: Parsed command-line arguments
+    """
+    print(f"🎯 TraceTap Regression Test Generator")
+    print(f"   Input: {args.log_file}")
+    print(f"   Output: {args.output}")
+
+    # Determine grouping strategy
+    grouping = args.grouping if hasattr(args, 'grouping') and args.grouping else 'endpoint'
+    print(f"   Grouping: {grouping}")
+
+    # Parse assertion types
+    assert_types = []
+    if hasattr(args, 'assert_status') and args.assert_status:
+        assert_types.append('status-codes')
+    if hasattr(args, 'assert_schema') and args.assert_schema:
+        assert_types.append('response-schemas')
+    if hasattr(args, 'assert_fields') and args.assert_fields:
+        assert_types.append('critical-fields')
+    if hasattr(args, 'assert_snapshot') and args.assert_snapshot:
+        assert_types.append('snapshots')
+
+    # Default to status codes if none specified
+    if not assert_types:
+        assert_types = ['status-codes']
+
+    print(f"   Assertions: {', '.join(assert_types)}")
+
+    # Parse critical fields
+    critical_fields = None
+    if hasattr(args, 'critical_fields') and args.critical_fields:
+        critical_fields = [f.strip() for f in args.critical_fields.split(',')]
+        print(f"   Critical fields: {', '.join(critical_fields)}")
+
+    print()
+
+    # Generate regression tests
+    try:
+        success = generate_regression_tests(
+            json_file=args.log_file,
+            output_file=args.output,
+            grouping=grouping,
+            base_url=args.base_url if hasattr(args, 'base_url') else None,
+            assert_types=assert_types,
+            critical_fields=critical_fields
+        )
+
+        if success:
+            print()
+            print(f"🎉 Success! Regression tests generated")
+            print()
+            print(f"Next steps:")
+            print(f"  1. Install Playwright: npm install -D @playwright/test")
+            print(f"  2. Run tests: npx playwright test {args.output}")
+            print()
+        else:
+            print(f"\n❌ Failed to generate regression tests")
+            sys.exit(1)
+
+    except Exception as e:
+        print(f"\n❌ Error generating regression tests: {e}")
+        import traceback
+        if hasattr(args, 'verbose') and args.verbose:
+            traceback.print_exc()
+        sys.exit(1)
+
+
 def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -448,6 +520,27 @@ For more information: https://github.com/yourusername/tracetap
     validate_parser = subparsers.add_parser('validate', help='Validate captured traffic')
     validate_parser.add_argument('log_file', help='TraceTap JSON log file')
 
+    # --- GENERATE-REGRESSION command ---
+    regression_parser = subparsers.add_parser('generate-regression',
+                                             help='Generate Playwright regression tests from captured traffic')
+    regression_parser.add_argument('log_file', help='TraceTap JSON log file')
+    regression_parser.add_argument('-o', '--output', required=True,
+                                  help='Output test file (e.g., tests/regression.spec.ts)')
+    regression_parser.add_argument('-g', '--grouping', choices=['endpoint', 'flow'], default='endpoint',
+                                  help='Grouping strategy: endpoint (by API endpoint) or flow (by time-based sessions)')
+    regression_parser.add_argument('--base-url', help='Base URL for API (optional)')
+    regression_parser.add_argument('--assert-status', action='store_true',
+                                  help='Assert HTTP status codes (default: enabled)')
+    regression_parser.add_argument('--assert-schema', action='store_true',
+                                  help='Assert response JSON schema validation')
+    regression_parser.add_argument('--assert-fields', action='store_true',
+                                  help='Assert critical fields (use with --critical-fields)')
+    regression_parser.add_argument('--critical-fields',
+                                  help='Comma-separated list of critical field paths (e.g., user.id,order.total)')
+    regression_parser.add_argument('--assert-snapshot', action='store_true',
+                                  help='Assert full response snapshots')
+    regression_parser.add_argument('--verbose', action='store_true', help='Verbose output')
+
     # Parse arguments
     args = parser.parse_args()
 
@@ -462,6 +555,8 @@ For more information: https://github.com/yourusername/tracetap
         cmd_scenario(args)
     elif args.command == 'validate':
         cmd_validate(args)
+    elif args.command == 'generate-regression':
+        cmd_generate_regression(args)
     else:
         parser.print_help()
         sys.exit(1)
