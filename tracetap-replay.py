@@ -5,11 +5,13 @@ TraceTap Replay & Mock CLI
 Command-line interface for TraceTap traffic replay and mock server functionality.
 
 Commands:
-    replay      - Replay captured HTTP traffic
-    mock        - Start mock HTTP server
-    variables   - Extract variables from captures
-    scenario    - Generate YAML replay scenario
-    validate    - Validate captured traffic
+    replay              - Replay captured HTTP traffic
+    mock                - Start mock HTTP server
+    variables           - Extract variables from captures
+    scenario            - Generate YAML replay scenario
+    validate            - Validate captured traffic
+    generate-regression - Generate Playwright regression tests
+    suggest-tests       - Generate AI-powered test suggestions
 
 Examples:
     # Replay traffic to new endpoint
@@ -23,6 +25,12 @@ Examples:
 
     # Generate YAML scenario with AI
     python3 tracetap-replay.py scenario session.json --output scenario.yaml --ai
+
+    # Generate Playwright regression tests
+    python3 tracetap-replay.py generate-regression session.json -o tests/regression.spec.ts
+
+    # Generate AI test suggestions
+    python3 tracetap-replay.py suggest-tests session.json -o suggestions.md
 """
 
 import argparse
@@ -436,6 +444,78 @@ def cmd_generate_regression(args):
         sys.exit(1)
 
 
+def cmd_suggest_tests(args):
+    """
+    Generate AI-powered test suggestions from captured traffic.
+
+    Args:
+        args: Parsed command-line arguments
+    """
+    print(f"🤖 TraceTap AI Test Suggestion Engine")
+    print(f"   Input: {args.log_file}")
+
+    # Determine output destination
+    if args.output:
+        print(f"   Output: {args.output}")
+    else:
+        print(f"   Output: stdout")
+
+    # Check AI availability
+    use_ai = not args.no_ai
+    if use_ai:
+        print(f"   AI Enhancement: Enabled")
+    else:
+        print(f"   AI Enhancement: Disabled (--no-ai)")
+
+    print()
+
+    try:
+        from tracetap.ai.test_suggester import generate_test_suggestions
+
+        # Generate suggestions
+        markdown = generate_test_suggestions(
+            json_file=args.log_file,
+            output_file=args.output,
+            use_ai=use_ai,
+            verbose=True
+        )
+
+        # If no output file, print to stdout
+        if not args.output:
+            print()
+            print(markdown)
+
+        print()
+        print(f"🎉 Success! Test suggestions generated")
+        print()
+
+        if args.output:
+            print(f"Next steps:")
+            print(f"  1. Review suggestions in {args.output}")
+            print(f"  2. Implement high-priority tests first")
+            print(f"  3. Use code snippets as starting point")
+            print()
+        else:
+            print(f"Tip: Use -o to save suggestions to a file")
+            print()
+
+    except ImportError as e:
+        print(f"\n❌ Error: Missing dependencies for AI test suggestions")
+        print(f"   {e}")
+        print(f"\nInstall required packages:")
+        print(f"   pip install anthropic")
+        sys.exit(1)
+    except FileNotFoundError:
+        print(f"\n❌ Error: File not found: {args.log_file}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"\n❌ Error generating test suggestions: {e}")
+        import traceback
+        if hasattr(args, 'verbose') and args.verbose:
+            traceback.print_exc()
+        sys.exit(1)
+
+
 def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -454,6 +534,12 @@ Examples:
 
   # Generate test scenario with AI
   %(prog)s scenario session.json --ai --intent "User registration flow" --output test.yaml
+
+  # Generate Playwright regression tests
+  %(prog)s generate-regression session.json -o tests/regression.spec.ts --assert-schema
+
+  # Generate AI test suggestions
+  %(prog)s suggest-tests session.json -o suggestions.md
 
   # Validate captured traffic
   %(prog)s validate session.json
@@ -541,6 +627,16 @@ For more information: https://github.com/yourusername/tracetap
                                   help='Assert full response snapshots')
     regression_parser.add_argument('--verbose', action='store_true', help='Verbose output')
 
+    # --- SUGGEST-TESTS command ---
+    suggest_parser = subparsers.add_parser('suggest-tests',
+                                           help='Generate AI-powered test suggestions from captured traffic')
+    suggest_parser.add_argument('log_file', help='TraceTap JSON log file')
+    suggest_parser.add_argument('-o', '--output',
+                               help='Output markdown file (default: print to stdout)')
+    suggest_parser.add_argument('--no-ai', action='store_true',
+                               help='Disable AI enhancement (use statistical analysis only)')
+    suggest_parser.add_argument('--verbose', action='store_true', help='Verbose output')
+
     # Parse arguments
     args = parser.parse_args()
 
@@ -557,6 +653,8 @@ For more information: https://github.com/yourusername/tracetap
         cmd_validate(args)
     elif args.command == 'generate-regression':
         cmd_generate_regression(args)
+    elif args.command == 'suggest-tests':
+        cmd_suggest_tests(args)
     else:
         parser.print_help()
         sys.exit(1)
