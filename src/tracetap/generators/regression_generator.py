@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.parse import urlparse, parse_qs
 
+from .assertion_builder import AssertionBuilder
+
 
 class VariableExtractor:
     """Extract and track dynamic variables from requests (IDs, tokens, UUIDs)"""
@@ -220,9 +222,14 @@ class RequestGrouper:
 class PlaywrightGenerator:
     """Generate Playwright test code from grouped requests"""
 
-    def __init__(self, base_url: Optional[str] = None):
+    def __init__(
+        self,
+        base_url: Optional[str] = None,
+        assertion_builder: Optional[AssertionBuilder] = None
+    ):
         self.base_url = base_url
         self.variable_extractor = VariableExtractor()
+        self.assertion_builder = assertion_builder or AssertionBuilder(status_codes=True)
 
     def generate_test_file(
         self,
@@ -312,7 +319,6 @@ test.describe('API Regression Tests', () => {{
         """Generate a single test case"""
         method = request.get('method', 'GET').upper()
         url = request.get('url', '')
-        status = request.get('status_code', 200)
         body = request.get('body')
 
         # Extract variables from URL
@@ -339,13 +345,27 @@ test.describe('API Regression Tests', () => {{
 
         test_code += """);
 
-    // Assert response status
-    expect(response.status()).toBe(""" + str(status) + """);
-
-    // Assert response has content
+    // Get response data
     const data = await response.json();
-    expect(data).toBeDefined();
-  });"""
+
+    // Assertions"""
+
+        # Generate assertions using assertion builder
+        response_data = {
+            'status_code': request.get('status_code', 200),
+            'response_body': request.get('response_body')
+        }
+        assertions = self.assertion_builder.build_assertions_code(request, response_data, indent=4)
+
+        if assertions:
+            test_code += f"\n{assertions}"
+        else:
+            # Fallback assertions
+            test_code += f"""
+    expect(response.status()).toBe({request.get('status_code', 200)});
+    expect(data).toBeDefined();"""
+
+        test_code += "\n  });"
 
         return test_code
 
@@ -373,15 +393,18 @@ test.describe('API Regression Tests', () => {{
 class RegressionGenerator:
     """Main regression test generator"""
 
-    def __init__(self):
-        self.playwright_gen = PlaywrightGenerator()
+    def __init__(self, assertion_builder: Optional[AssertionBuilder] = None):
+        self.assertion_builder = assertion_builder
+        self.playwright_gen = PlaywrightGenerator(assertion_builder=assertion_builder)
 
     def generate_from_file(
         self,
         json_file: str,
         output_file: str,
         grouping: str = 'endpoint',
-        base_url: Optional[str] = None
+        base_url: Optional[str] = None,
+        assert_types: Optional[List[str]] = None,
+        critical_fields: Optional[List[str]] = None
     ) -> bool:
         """
         Generate regression tests from captured traffic JSON
@@ -412,6 +435,12 @@ class RegressionGenerator:
             if base_url:
                 self.playwright_gen.base_url = base_url
 
+            # Configure assertion builder if not already set
+            if assert_types and not self.assertion_builder:
+                from .assertion_builder import create_assertion_builder
+                self.assertion_builder = create_assertion_builder(assert_types, critical_fields)
+                self.playwright_gen.assertion_builder = self.assertion_builder
+
             # Generate test file
             test_code = self.playwright_gen.generate_test_file(
                 requests,
@@ -427,6 +456,9 @@ class RegressionGenerator:
             print(f"✓ Generated {output_file}")
             print(f"  - {len(requests)} requests processed")
             print(f"  - Grouping: {grouping}")
+
+            if self.assertion_builder:
+                print(f"  - Assertions: {self.assertion_builder.get_assertion_summary()}")
 
             return True
 
@@ -445,7 +477,9 @@ def generate_regression_tests(
     json_file: str,
     output_file: str,
     grouping: str = 'endpoint',
-    base_url: Optional[str] = None
+    base_url: Optional[str] = None,
+    assert_types: Optional[List[str]] = None,
+    critical_fields: Optional[List[str]] = None
 ) -> bool:
     """
     Convenience function to generate regression tests
@@ -455,9 +489,18 @@ def generate_regression_tests(
         output_file: Path to save generated test file
         grouping: 'endpoint' or 'flow'
         base_url: Base URL for API (optional)
+        assert_types: List of assertion types to enable
+        critical_fields: List of critical field paths
 
     Returns:
         True if successful, False otherwise
     """
     generator = RegressionGenerator()
-    return generator.generate_from_file(json_file, output_file, grouping, base_url)
+    return generator.generate_from_file(
+        json_file,
+        output_file,
+        grouping,
+        base_url,
+        assert_types,
+        critical_fields
+    )
