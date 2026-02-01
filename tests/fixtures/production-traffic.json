@@ -1,0 +1,239 @@
+{
+  "metadata": {
+    "session_name": "production-traffic",
+    "timestamp": "2024-01-20T14:30:00Z",
+    "filter": "api.production.com"
+  },
+  "requests": [
+    {
+      "method": "GET",
+      "url": "https://api.production.com/users",
+      "status_code": 200,
+      "timestamp": "2024-01-20T14:30:01.000Z",
+      "duration_ms": 45,
+      "headers": {
+        "Authorization": "Bearer token123",
+        "Content-Type": "application/json"
+      },
+      "body": null,
+      "response_body": "[{\"id\": 1, \"name\": \"Alice\"}, {\"id\": 2, \"name\": \"Bob\"}]",
+      "response_headers": {
+        "Content-Type": "application/json"
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://api.production.com/users",
+      "status_code": 200,
+      "timestamp": "2024-01-20T14:30:02.000Z",
+      "duration_ms": 42,
+      "headers": {},
+      "body": null,
+      "response_body": "[{\"id\": 3, \"name\": \"Charlie\"}, {\"id\": 4, \"name\": \"Diana\"}]",
+      "response_headers": {
+        "Content-Type": "application/json"
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://api.production.com/users",
+      "status_code": 200,
+      "timestamp": "2024-01-20T14:30:03.000Z",
+      "duration_ms": 38,
+      "headers": {},
+      "body": null,
+      "response_body": "[{\"id\": 5, \"name\": \"Eve\"}]",
+      "response_headers": {
+        "Content-Type": "application/json"
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://api.production.com/users/1",
+      "status_code": 200,
+      "timestamp": "2024-01-20T14:30:04.000Z",
+      "duration_ms": 25,
+      "headers": {},
+      "body": null,
+      "response_body": "{\"id\": 1, \"name\": \"Alice\", \"email\": \"alice@example.com\"}",
+      "response_headers": {
+        "Content-Type": "application/json"
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://api.production.com/users/5",
+      "status_code": 200,
+      "timestamp": "2024-01-20T14:30:05.000Z",
+      "duration_ms": 28,
+      "headers": {},
+      "body": null,
+      "response_body": "{\"id\": 5, \"name\": \"Eve\", \"email\": \"eve@example.com\"}",
+      "response_headers": {
+        "Content-Type": "application/json"
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://api.production.com/users/100",
+      "status_code": 200,
+      "timestamp": "2024-01-20T14:30:06.000Z",
+      "duration_ms": 30,
+      "headers": {},
+      "body": null,
+      "response_body": "{\"id\": 100, \"name\": \"Frank\", \"email\": \"frank@example.com\"}",
+      "response_headers": {
+        "Content-Type": "application/json"
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://api.production.com/orders",
+      "status_code": 201,
+      "timestamp": "2024-01-20T14:30:07.000Z",
+      "duration_ms": 85,
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"user_id\": 1, \"items\": [{\"product_id\": 10, \"quantity\": 2}], \"total\": 49.99}",
+      "response_body": "{\"id\": 1001, \"user_id\": 1, \"status\": \"pending\", \"total\": 49.99}",
+      "response_headers": {
+        "Content-Type": "application/json"
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://api.production.com/orders",
+      "status_code": 201,
+      "timestamp": "2024-01-20T14:30:07.050Z",
+      "duration_ms": 90,
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"user_id\": 2, \"items\": [{\"product_id\": 15, \"quantity\": 1}], \"total\": 29.99}",
+      "response_body": "{\"id\": 1002, \"user_id\": 2, \"status\": \"pending\", \"total\": 29.99}",
+      "response_headers": {
+        "Content-Type": "application/json"
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://api.production.com/orders/1001",
+      "status_code": 200,
+      "timestamp": "2024-01-20T14:30:08.000Z",
+      "duration_ms": 35,
+      "headers": {},
+      "body": null,
+      "response_body": "{\"id\": 1001, \"user_id\": 1, \"status\": \"pending\", \"total\": 49.99}",
+      "response_headers": {
+        "Content-Type": "application/json"
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://api.production.com/products",
+      "status_code": 200,
+      "timestamp": "2024-01-20T14:30:09.000Z",
+      "duration_ms": 55,
+      "headers": {},
+      "body": null,
+      "response_body": "[{\"id\": 10, \"name\": \"Widget\", \"price\": 24.99}, {\"id\": 15, \"name\": \"Gadget\", \"price\": 29.99}]",
+      "response_headers": {
+        "Content-Type": "application/json"
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://api.production.com/products",
+      "status_code": 200,
+      "timestamp": "2024-01-20T14:30:10.000Z",
+      "duration_ms": 50,
+      "headers": {},
+      "body": null,
+      "response_body": "[{\"id\": 10, \"name\": \"Widget\", \"price\": 24.99}, {\"id\": 15, \"name\": \"Gadget\", \"price\": 29.99}, {\"id\": 20, \"name\": \"Gizmo\", \"price\": 39.99}]",
+      "response_headers": {
+        "Content-Type": "application/json"
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://api.production.com/products",
+      "status_code": 200,
+      "timestamp": "2024-01-20T14:30:11.000Z",
+      "duration_ms": 48,
+      "headers": {},
+      "body": null,
+      "response_body": "[{\"id\": 10, \"name\": \"Widget\", \"price\": 24.99}]",
+      "response_headers": {
+        "Content-Type": "application/json"
+      }
+    },
+    {
+      "method": "PUT",
+      "url": "https://api.production.com/users/1",
+      "status_code": 200,
+      "timestamp": "2024-01-20T14:30:12.000Z",
+      "duration_ms": 70,
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"name\": \"Alice Updated\"}",
+      "response_body": "{\"id\": 1, \"name\": \"Alice Updated\", \"email\": \"alice@example.com\"}",
+      "response_headers": {
+        "Content-Type": "application/json"
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://api.production.com/stats",
+      "status_code": 200,
+      "timestamp": "2024-01-20T14:30:13.000Z",
+      "duration_ms": 120,
+      "headers": {},
+      "body": null,
+      "response_body": "{\"total_users\": 100, \"total_orders\": 1002, \"total_products\": 20}",
+      "response_headers": {
+        "Content-Type": "application/json"
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://api.production.com/categories",
+      "status_code": 200,
+      "timestamp": "2024-01-20T14:30:14.000Z",
+      "duration_ms": 40,
+      "headers": {},
+      "body": null,
+      "response_body": "[{\"id\": 1, \"name\": \"Electronics\"}]",
+      "response_headers": {
+        "Content-Type": "application/json"
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://api.production.com/categories",
+      "status_code": 200,
+      "timestamp": "2024-01-20T14:30:15.000Z",
+      "duration_ms": 42,
+      "headers": {},
+      "body": null,
+      "response_body": "[{\"id\": 1, \"name\": \"Electronics\"}, {\"id\": 2, \"name\": \"Home & Garden\"}]",
+      "response_headers": {
+        "Content-Type": "application/json"
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://api.production.com/categories",
+      "status_code": 200,
+      "timestamp": "2024-01-20T14:30:16.000Z",
+      "duration_ms": 38,
+      "headers": {},
+      "body": null,
+      "response_body": "[{\"id\": 1, \"name\": \"Electronics\"}]",
+      "response_headers": {
+        "Content-Type": "application/json"
+      }
+    }
+  ]
+}
