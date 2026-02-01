@@ -1,0 +1,368 @@
+openapi: 3.0.0
+info:
+  title: E-commerce API
+  version: 1.0.0
+  description: API contract generated from captured traffic on 2024-01-20
+servers:
+  - url: http://localhost:5000
+paths:
+  /products:
+    get:
+      summary: Get products
+      operationId: getProducts
+      tags:
+        - products
+      parameters:
+        - name: category
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter products by category
+          example: Electronics
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Product'
+              example:
+                - id: 1
+                  name: Laptop Pro 15
+                  price: 1299.99
+                  category: Electronics
+                  stock: 50
+  /products/{id}:
+    get:
+      summary: Get product
+      operationId: getProductsId
+      tags:
+        - products
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Product ID
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+              example:
+                id: 1
+                name: Laptop Pro 15
+                price: 1299.99
+                category: Electronics
+                stock: 50
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /cart:
+    get:
+      summary: Get cart
+      operationId: getCart
+      tags:
+        - cart
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cart'
+              example:
+                items:
+                  - cart_item_id: 1
+                    product_id: 1
+                    name: Laptop Pro 15
+                    price: 1299.99
+                    quantity: 2
+                total: 2599.98
+                item_count: 1
+    post:
+      summary: Create cart
+      operationId: postCart
+      tags:
+        - cart
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - product_id
+              properties:
+                product_id:
+                  type: integer
+                quantity:
+                  type: integer
+                  default: 1
+            example:
+              product_id: 1
+              quantity: 2
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  item:
+                    $ref: '#/components/schemas/CartItem'
+                  cart_total:
+                    type: number
+              example:
+                message: Item added to cart
+                item:
+                  cart_item_id: 1
+                  product_id: 1
+                  name: Laptop Pro 15
+                  price: 1299.99
+                  quantity: 2
+                cart_total: 2599.98
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /cart/{id}:
+    delete:
+      summary: Delete cart item
+      operationId: deleteCartId
+      tags:
+        - cart
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Cart item ID
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /checkout:
+    post:
+      summary: Create order via checkout
+      operationId: postCheckout
+      tags:
+        - checkout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - shipping_address
+              properties:
+                payment_method:
+                  type: string
+                  default: credit_card
+                shipping_address:
+                  type: string
+            example:
+              payment_method: credit_card
+              shipping_address: 123 Main St, Anytown, ST 12345
+      responses:
+        '201':
+          description: Resource created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+              example:
+                id: 1001
+                items:
+                  - cart_item_id: 1
+                    product_id: 1
+                    name: Laptop Pro 15
+                    price: 1299.99
+                    quantity: 2
+                total: 2679.97
+                payment_method: credit_card
+                shipping_address: 123 Main St, Anytown, ST 12345
+                status: confirmed
+                created_at: '2024-01-20T10:30:07.000Z'
+                estimated_delivery: 3-5 business days
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /orders/{id}:
+    get:
+      summary: Get order
+      operationId: getOrdersId
+      tags:
+        - orders
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Order ID
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /health:
+    get:
+      summary: Health check
+      operationId: getHealth
+      tags:
+        - system
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  timestamp:
+                    type: string
+              example:
+                status: healthy
+                timestamp: '2024-01-20T10:30:00.000Z'
+components:
+  schemas:
+    Product:
+      type: object
+      required:
+        - id
+        - name
+        - price
+        - category
+        - stock
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        price:
+          type: number
+        category:
+          type: string
+        stock:
+          type: integer
+    CartItem:
+      type: object
+      required:
+        - cart_item_id
+        - product_id
+        - name
+        - price
+        - quantity
+      properties:
+        cart_item_id:
+          type: integer
+        product_id:
+          type: integer
+        name:
+          type: string
+        price:
+          type: number
+        quantity:
+          type: integer
+    Cart:
+      type: object
+      required:
+        - items
+        - total
+        - item_count
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CartItem'
+        total:
+          type: number
+        item_count:
+          type: integer
+    Order:
+      type: object
+      required:
+        - id
+        - items
+        - total
+        - status
+      properties:
+        id:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CartItem'
+        total:
+          type: number
+        payment_method:
+          type: string
+        shipping_address:
+          type: string
+        status:
+          type: string
+          enum:
+            - pending
+            - confirmed
+            - shipped
+            - delivered
+        created_at:
+          type: string
+          format: date-time
+        estimated_delivery:
+          type: string
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string

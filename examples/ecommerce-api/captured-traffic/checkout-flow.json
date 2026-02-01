@@ -1,0 +1,132 @@
+{
+  "metadata": {
+    "session_name": "ecommerce-checkout",
+    "timestamp": "2024-01-20T10:30:00Z",
+    "filter": "localhost:5000"
+  },
+  "requests": [
+    {
+      "method": "GET",
+      "url": "http://localhost:5000/products",
+      "status_code": 200,
+      "timestamp": "2024-01-20T10:30:01.000Z",
+      "duration_ms": 15,
+      "headers": {
+        "Accept": "application/json"
+      },
+      "body": null,
+      "response_body": "[{\"id\": 1, \"name\": \"Laptop Pro 15\", \"price\": 1299.99, \"category\": \"Electronics\", \"stock\": 50}, {\"id\": 2, \"name\": \"Wireless Mouse\", \"price\": 49.99, \"category\": \"Electronics\", \"stock\": 200}, {\"id\": 3, \"name\": \"USB-C Hub\", \"price\": 79.99, \"category\": \"Electronics\", \"stock\": 150}]",
+      "response_headers": {
+        "Content-Type": "application/json"
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://localhost:5000/products/1",
+      "status_code": 200,
+      "timestamp": "2024-01-20T10:30:02.000Z",
+      "duration_ms": 8,
+      "headers": {
+        "Accept": "application/json"
+      },
+      "body": null,
+      "response_body": "{\"id\": 1, \"name\": \"Laptop Pro 15\", \"price\": 1299.99, \"category\": \"Electronics\", \"stock\": 50}",
+      "response_headers": {
+        "Content-Type": "application/json"
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://localhost:5000/products/3",
+      "status_code": 200,
+      "timestamp": "2024-01-20T10:30:03.000Z",
+      "duration_ms": 7,
+      "headers": {
+        "Accept": "application/json"
+      },
+      "body": null,
+      "response_body": "{\"id\": 3, \"name\": \"USB-C Hub\", \"price\": 79.99, \"category\": \"Electronics\", \"stock\": 150}",
+      "response_headers": {
+        "Content-Type": "application/json"
+      }
+    },
+    {
+      "method": "POST",
+      "url": "http://localhost:5000/cart",
+      "status_code": 200,
+      "timestamp": "2024-01-20T10:30:04.000Z",
+      "duration_ms": 12,
+      "headers": {
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      "body": "{\"product_id\": 1, \"quantity\": 2}",
+      "response_body": "{\"message\": \"Item added to cart\", \"item\": {\"cart_item_id\": 1, \"product_id\": 1, \"name\": \"Laptop Pro 15\", \"price\": 1299.99, \"quantity\": 2}, \"cart_total\": 2599.98}",
+      "response_headers": {
+        "Content-Type": "application/json"
+      }
+    },
+    {
+      "method": "POST",
+      "url": "http://localhost:5000/cart",
+      "status_code": 200,
+      "timestamp": "2024-01-20T10:30:05.000Z",
+      "duration_ms": 10,
+      "headers": {
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      "body": "{\"product_id\": 3, \"quantity\": 1}",
+      "response_body": "{\"message\": \"Item added to cart\", \"item\": {\"cart_item_id\": 2, \"product_id\": 3, \"name\": \"USB-C Hub\", \"price\": 79.99, \"quantity\": 1}, \"cart_total\": 2679.97}",
+      "response_headers": {
+        "Content-Type": "application/json"
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://localhost:5000/cart",
+      "status_code": 200,
+      "timestamp": "2024-01-20T10:30:06.000Z",
+      "duration_ms": 5,
+      "headers": {
+        "Accept": "application/json"
+      },
+      "body": null,
+      "response_body": "{\"items\": [{\"cart_item_id\": 1, \"product_id\": 1, \"name\": \"Laptop Pro 15\", \"price\": 1299.99, \"quantity\": 2}, {\"cart_item_id\": 2, \"product_id\": 3, \"name\": \"USB-C Hub\", \"price\": 79.99, \"quantity\": 1}], \"total\": 2679.97, \"item_count\": 2}",
+      "response_headers": {
+        "Content-Type": "application/json"
+      }
+    },
+    {
+      "method": "POST",
+      "url": "http://localhost:5000/checkout",
+      "status_code": 201,
+      "timestamp": "2024-01-20T10:30:07.000Z",
+      "duration_ms": 45,
+      "headers": {
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      "body": "{\"payment_method\": \"credit_card\", \"shipping_address\": \"123 Main St, Anytown, ST 12345\"}",
+      "response_body": "{\"id\": 1001, \"items\": [{\"cart_item_id\": 1, \"product_id\": 1, \"name\": \"Laptop Pro 15\", \"price\": 1299.99, \"quantity\": 2}, {\"cart_item_id\": 2, \"product_id\": 3, \"name\": \"USB-C Hub\", \"price\": 79.99, \"quantity\": 1}], \"total\": 2679.97, \"payment_method\": \"credit_card\", \"shipping_address\": \"123 Main St, Anytown, ST 12345\", \"status\": \"confirmed\", \"created_at\": \"2024-01-20T10:30:07.000Z\", \"estimated_delivery\": \"3-5 business days\"}",
+      "response_headers": {
+        "Content-Type": "application/json"
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://localhost:5000/orders/1001",
+      "status_code": 200,
+      "timestamp": "2024-01-20T10:30:08.000Z",
+      "duration_ms": 6,
+      "headers": {
+        "Accept": "application/json"
+      },
+      "body": null,
+      "response_body": "{\"id\": 1001, \"items\": [{\"cart_item_id\": 1, \"product_id\": 1, \"name\": \"Laptop Pro 15\", \"price\": 1299.99, \"quantity\": 2}, {\"cart_item_id\": 2, \"product_id\": 3, \"name\": \"USB-C Hub\", \"price\": 79.99, \"quantity\": 1}], \"total\": 2679.97, \"payment_method\": \"credit_card\", \"shipping_address\": \"123 Main St, Anytown, ST 12345\", \"status\": \"confirmed\", \"created_at\": \"2024-01-20T10:30:07.000Z\", \"estimated_delivery\": \"3-5 business days\"}",
+      "response_headers": {
+        "Content-Type": "application/json"
+      }
+    }
+  ]
+}
