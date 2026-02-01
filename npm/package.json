@@ -1,0 +1,57 @@
+{
+  "name": "tracetap",
+  "version": "1.0.0",
+  "description": "HTTP/HTTPS traffic capture proxy with AI-powered API testing tools - npm wrapper",
+  "keywords": [
+    "proxy",
+    "http",
+    "https",
+    "api",
+    "testing",
+    "postman",
+    "wiremock",
+    "playwright",
+    "mitmproxy",
+    "ai",
+    "qa",
+    "quality-assurance",
+    "test-automation"
+  ],
+  "author": "Vassilis Soumakis",
+  "license": "MIT",
+  "homepage": "https://github.com/VassilisSoum/tracetap#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/VassilisSoum/tracetap.git"
+  },
+  "bugs": {
+    "url": "https://github.com/VassilisSoum/tracetap/issues"
+  },
+  "bin": {
+    "tracetap": "./bin/tracetap.js",
+    "tracetap-quickstart": "./bin/tracetap-quickstart.js",
+    "tracetap-ai-postman": "./bin/tracetap-ai-postman.js",
+    "tracetap-replay": "./bin/tracetap-replay.js",
+    "tracetap-playwright": "./bin/tracetap-playwright.js",
+    "tracetap2wiremock": "./bin/tracetap2wiremock.js"
+  },
+  "scripts": {
+    "postinstall": "node scripts/install.js",
+    "test": "node scripts/test.js"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "preferGlobal": false,
+  "files": [
+    "bin/",
+    "scripts/",
+    "README.md",
+    "LICENSE"
+  ]
+}
