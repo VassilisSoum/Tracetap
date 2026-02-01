@@ -18,6 +18,12 @@ from rich.prompt import Confirm, IntPrompt, Prompt
 from rich.table import Table
 from rich.text import Text
 
+try:
+    from tracetap.cert_installer import CertificateInstaller
+except ImportError:
+    # Fallback if running in development
+    CertificateInstaller = None
+
 
 console = Console()
 
@@ -137,6 +143,84 @@ class QuickstartGuide:
                 sys.exit(0)
 
         return port
+
+    def check_https_certificate(self) -> bool:
+        """Check and install HTTPS certificate if needed"""
+        console.print("\n[bold cyan]HTTPS Certificate Setup[/bold cyan]\n")
+
+        cert_path = Path.home() / ".mitmproxy" / "mitmproxy-ca-cert.pem"
+
+        if cert_path.exists():
+            console.print("[green]✓ mitmproxy certificate found[/green]")
+
+            # Ask if user wants to ensure it's installed in system trust store
+            panel = Panel(
+                "[bold white]For HTTPS traffic capture:[/bold white]\n\n"
+                "The mitmproxy CA certificate must be trusted by your system.\n"
+                "This allows TraceTap to decrypt and capture HTTPS traffic.\n\n"
+                "[dim]The certificate is only used locally and does not compromise security.[/dim]",
+                title="📜 About HTTPS Interception",
+                border_style="cyan",
+            )
+            console.print("\n", panel)
+
+            if Confirm.ask("\nInstall certificate to system trust store? (recommended for HTTPS)", default=True):
+                return self._install_certificate()
+            else:
+                console.print("\n[yellow]⚠ Skipping certificate installation[/yellow]")
+                console.print("[dim]Note: HTTPS traffic may not be captured without certificate trust[/dim]")
+                return True
+        else:
+            console.print("[yellow]⚠ mitmproxy certificate not found yet[/yellow]")
+            console.print("[dim]It will be generated automatically on first run[/dim]\n")
+
+            panel = Panel(
+                "[bold white]How HTTPS capture works:[/bold white]\n\n"
+                "1. TraceTap generates a CA certificate on first run\n"
+                "2. The certificate is installed in your system trust store\n"
+                "3. This allows TraceTap to intercept HTTPS traffic safely\n\n"
+                "[bold yellow]After capture starts, you'll be prompted to trust the certificate[/bold yellow]\n"
+                "[dim]This is a one-time setup step[/dim]",
+                title="🔒 HTTPS Setup",
+                border_style="yellow",
+            )
+            console.print(panel, "\n")
+
+            return True
+
+    def _install_certificate(self) -> bool:
+        """Install mitmproxy certificate using CertificateInstaller"""
+        if CertificateInstaller is None:
+            console.print("[yellow]⚠ Certificate installer not available[/yellow]")
+            console.print("[dim]You may need to install the certificate manually[/dim]")
+            return True
+
+        try:
+            installer = CertificateInstaller(verbose=False)
+
+            console.print("\n[bold]Installing certificate...[/bold]\n")
+
+            with console.status("[bold green]Installing certificate..."):
+                success = installer.install()
+
+            if success:
+                console.print("\n[bold green]✓ Certificate installed successfully![/bold green]")
+                return True
+            else:
+                console.print("\n[yellow]⚠ Certificate installation had issues[/yellow]")
+                console.print("[dim]HTTPS capture may not work properly[/dim]")
+
+                if Confirm.ask("Continue anyway?", default=True):
+                    return True
+                return False
+
+        except Exception as e:
+            console.print(f"\n[yellow]⚠ Could not install certificate: {e}[/yellow]")
+            console.print("[dim]You can install it manually later if needed[/dim]")
+
+            if Confirm.ask("Continue anyway?", default=True):
+                return True
+            return False
 
     def configure_capture(self):
         """Configure capture settings"""
@@ -293,20 +377,25 @@ class QuickstartGuide:
             self.server_port = self.choose_server_port(detected_servers)
             console.print(f"\n[bold green]✓ Selected port: {self.server_port}[/bold green]")
 
-            # Step 4: Configure capture
+            # Step 4: Check HTTPS certificate
+            if not self.check_https_certificate():
+                console.print("\n[yellow]Certificate setup cancelled[/yellow]\n")
+                return
+
+            # Step 5: Configure capture
             self.configure_capture()
 
-            # Step 5: Explain what's next
+            # Step 6: Explain what's next
             self.explain_next_steps()
 
-            # Step 6: Start capture
+            # Step 7: Start capture
             if not self.start_capture():
                 return
 
-            # Step 7: Analyze results
+            # Step 8: Analyze results
             num_requests, num_endpoints = self.analyze_capture()
 
-            # Step 8: Show results and next steps
+            # Step 9: Show results and next steps
             self.show_results(num_requests, num_endpoints)
 
             console.print("[bold green]✓ Quickstart complete! Happy testing! 🚀[/bold green]\n")
