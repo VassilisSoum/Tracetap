@@ -1,0 +1,79 @@
+{
+  "metadata": {
+    "session_name": "test-session",
+    "timestamp": "2024-01-15T10:30:00Z",
+    "filter": "api.example.com"
+  },
+  "requests": [
+    {
+      "method": "GET",
+      "url": "https://api.example.com/users/12345",
+      "status_code": 200,
+      "timestamp": "2024-01-15T10:30:01Z",
+      "duration_ms": 45,
+      "headers": {
+        "Authorization": "Bearer token123",
+        "Content-Type": "application/json"
+      },
+      "body": null,
+      "response_body": "{\"id\": 12345, \"name\": \"John Doe\", \"email\": \"john@example.com\", \"role\": \"admin\"}",
+      "response_headers": {
+        "Content-Type": "application/json"
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://api.example.com/users",
+      "status_code": 201,
+      "timestamp": "2024-01-15T10:30:05Z",
+      "duration_ms": 120,
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"name\": \"Jane Smith\", \"email\": \"jane@example.com\", \"role\": \"user\"}",
+      "response_body": "{\"id\": 67890, \"name\": \"Jane Smith\", \"email\": \"jane@example.com\", \"role\": \"user\"}",
+      "response_headers": {
+        "Content-Type": "application/json"
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://api.example.com/users",
+      "status_code": 200,
+      "timestamp": "2024-01-15T10:30:10Z",
+      "duration_ms": 35,
+      "headers": {},
+      "body": null,
+      "response_body": "[{\"id\": 12345, \"name\": \"John Doe\"}, {\"id\": 67890, \"name\": \"Jane Smith\"}]",
+      "response_headers": {
+        "Content-Type": "application/json"
+      }
+    },
+    {
+      "method": "PUT",
+      "url": "https://api.example.com/users/12345",
+      "status_code": 200,
+      "timestamp": "2024-01-15T10:30:15Z",
+      "duration_ms": 80,
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"name\": \"John Updated\"}",
+      "response_body": "{\"id\": 12345, \"name\": \"John Updated\", \"email\": \"john@example.com\", \"role\": \"admin\"}",
+      "response_headers": {
+        "Content-Type": "application/json"
+      }
+    },
+    {
+      "method": "DELETE",
+      "url": "https://api.example.com/users/67890",
+      "status_code": 204,
+      "timestamp": "2024-01-15T10:30:20Z",
+      "duration_ms": 50,
+      "headers": {},
+      "body": null,
+      "response_body": null,
+      "response_headers": {}
+    }
+  ]
+}
