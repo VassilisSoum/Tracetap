@@ -12,6 +12,8 @@ Commands:
     validate            - Validate captured traffic
     generate-regression - Generate Playwright regression tests
     suggest-tests       - Generate AI-powered test suggestions
+    create-contract     - Generate OpenAPI contract from traffic
+    verify-contract     - Verify contract compatibility and detect breaking changes
 
 Examples:
     # Replay traffic to new endpoint
@@ -31,6 +33,12 @@ Examples:
 
     # Generate AI test suggestions
     python3 tracetap-replay.py suggest-tests session.json -o suggestions.md
+
+    # Generate OpenAPI contract
+    python3 tracetap-replay.py create-contract session.json -o contract.yaml
+
+    # Verify contract compatibility
+    python3 tracetap-replay.py verify-contract baseline.yaml current.yaml --fail-on-breaking
 """
 
 import argparse
@@ -516,6 +524,131 @@ def cmd_suggest_tests(args):
         sys.exit(1)
 
 
+def cmd_create_contract(args):
+    """
+    Generate OpenAPI contract from captured traffic.
+
+    Args:
+        args: Parsed command-line arguments
+    """
+    print(f"📋 TraceTap Contract Creator")
+    print(f"   Input: {args.log_file}")
+    print(f"   Output: {args.output}")
+
+    if hasattr(args, 'title') and args.title:
+        print(f"   Title: {args.title}")
+    if hasattr(args, 'version') and args.version:
+        print(f"   Version: {args.version}")
+
+    print()
+
+    try:
+        from tracetap.contract.contract_creator import create_contract_from_traffic
+
+        # Create contract
+        success = create_contract_from_traffic(
+            json_file=args.log_file,
+            output_file=args.output,
+            title=args.title if hasattr(args, 'title') and args.title else "API",
+            version=args.version if hasattr(args, 'version') and args.version else "1.0.0",
+            verbose=True
+        )
+
+        if success:
+            print()
+            print(f"🎉 Success! OpenAPI contract generated")
+            print()
+            print(f"Next steps:")
+            print(f"  1. Review contract: cat {args.output}")
+            print(f"  2. Validate: npx @apidevtools/swagger-cli validate {args.output}")
+            print(f"  3. Use as baseline: cp {args.output} baseline-contract.yaml")
+            print()
+        else:
+            print(f"\n❌ Failed to generate contract")
+            sys.exit(1)
+
+    except ImportError as e:
+        print(f"\n❌ Error: Missing dependencies for contract creation")
+        print(f"   {e}")
+        print(f"\nInstall required packages:")
+        print(f"   pip install pyyaml")
+        sys.exit(1)
+    except FileNotFoundError:
+        print(f"\n❌ Error: File not found: {args.log_file}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"\n❌ Error generating contract: {e}")
+        import traceback
+        if hasattr(args, 'verbose') and args.verbose:
+            traceback.print_exc()
+        sys.exit(1)
+
+
+def cmd_verify_contract(args):
+    """
+    Verify contract compatibility and detect breaking changes.
+
+    Args:
+        args: Parsed command-line arguments
+    """
+    print(f"🔍 TraceTap Contract Verifier")
+    print(f"   Baseline: {args.baseline}")
+    print(f"   Current: {args.current}")
+
+    if args.output:
+        print(f"   Report: {args.output}")
+
+    print()
+
+    try:
+        from tracetap.contract.contract_verifier import verify_contracts
+
+        # Verify contracts
+        is_compatible, changes = verify_contracts(
+            baseline_file=args.baseline,
+            current_file=args.current,
+            output_file=args.output,
+            format=args.format if hasattr(args, 'format') else 'text',
+            verbose=True
+        )
+
+        print()
+
+        if is_compatible:
+            print(f"✓ Contracts are compatible - no breaking changes")
+            print()
+            print(f"Safe to deploy!")
+            sys.exit(0)
+        else:
+            print(f"✗ Breaking changes detected!")
+            print()
+
+            if args.fail_on_breaking:
+                print(f"Failing due to --fail-on-breaking flag")
+                sys.exit(1)
+            else:
+                print(f"Warning: Breaking changes found but not failing")
+                print(f"Use --fail-on-breaking to fail CI builds on breaking changes")
+                sys.exit(0)
+
+    except ImportError as e:
+        print(f"\n❌ Error: Missing dependencies for contract verification")
+        print(f"   {e}")
+        print(f"\nInstall required packages:")
+        print(f"   pip install pyyaml")
+        sys.exit(1)
+    except FileNotFoundError as e:
+        print(f"\n❌ Error: Contract file not found")
+        print(f"   {e}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"\n❌ Error verifying contracts: {e}")
+        import traceback
+        if hasattr(args, 'verbose') and args.verbose:
+            traceback.print_exc()
+        sys.exit(1)
+
+
 def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -637,6 +770,31 @@ For more information: https://github.com/yourusername/tracetap
                                help='Disable AI enhancement (use statistical analysis only)')
     suggest_parser.add_argument('--verbose', action='store_true', help='Verbose output')
 
+    # --- CREATE-CONTRACT command ---
+    create_contract_parser = subparsers.add_parser('create-contract',
+                                                   help='Generate OpenAPI contract from captured traffic')
+    create_contract_parser.add_argument('log_file', help='TraceTap JSON log file')
+    create_contract_parser.add_argument('-o', '--output', required=True,
+                                       help='Output contract file (e.g., contract.yaml)')
+    create_contract_parser.add_argument('--title', default='API',
+                                       help='API title (default: API)')
+    create_contract_parser.add_argument('--version', default='1.0.0',
+                                       help='API version (default: 1.0.0)')
+    create_contract_parser.add_argument('--verbose', action='store_true', help='Verbose output')
+
+    # --- VERIFY-CONTRACT command ---
+    verify_contract_parser = subparsers.add_parser('verify-contract',
+                                                   help='Verify contract compatibility and detect breaking changes')
+    verify_contract_parser.add_argument('baseline', help='Baseline contract file (YAML or JSON)')
+    verify_contract_parser.add_argument('current', help='Current contract file (YAML or JSON)')
+    verify_contract_parser.add_argument('-o', '--output',
+                                       help='Output report file (optional)')
+    verify_contract_parser.add_argument('--format', choices=['text', 'json', 'markdown'], default='text',
+                                       help='Report format (default: text)')
+    verify_contract_parser.add_argument('--fail-on-breaking', action='store_true',
+                                       help='Exit with error code if breaking changes detected')
+    verify_contract_parser.add_argument('--verbose', action='store_true', help='Verbose output')
+
     # Parse arguments
     args = parser.parse_args()
 
@@ -655,6 +813,10 @@ For more information: https://github.com/yourusername/tracetap
         cmd_generate_regression(args)
     elif args.command == 'suggest-tests':
         cmd_suggest_tests(args)
+    elif args.command == 'create-contract':
+        cmd_create_contract(args)
+    elif args.command == 'verify-contract':
+        cmd_verify_contract(args)
     else:
         parser.print_help()
         sys.exit(1)
