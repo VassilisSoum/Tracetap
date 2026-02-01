@@ -33,6 +33,8 @@ dependencies = [
     "anthropic>=0.71.0",
     "PyYAML>=6.0",
     "typing-extensions>=4.3,<=4.11.0",
+    "rich>=13.0.0",
+    "click>=8.0.0",
 ]
 
 [project.optional-dependencies]
@@ -67,6 +69,7 @@ Documentation = "https://github.com/VassilisSoum/tracetap#readme"
 
 [project.scripts]
 tracetap = "tracetap:main"
+tracetap-quickstart = "tracetap.cli.quickstart:main"
 tracetap-ai-postman = "tracetap_ai_postman:main"
 tracetap-replay = "tracetap_replay:main"
 tracetap-playwright = "tracetap_playwright:main"
