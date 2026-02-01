@@ -19,7 +19,7 @@
 
 ## What QA Engineers Say
 
-> "I used to spend hours writing Postman collections manually. Now I just capture real traffic and TraceTap generates them automatically. Saved me 4 hours last week alone."
+> "I used to spend hours writing test cases manually. Now I just capture real traffic and TraceTap generates them automatically. Saved me 4 hours last week alone."
 > — QA Engineer, SaaS Startup
 
 > "Regression testing used to be a nightmare. Now we capture baseline traffic, and TraceTap tells us exactly what broke when developers push changes."
@@ -35,7 +35,7 @@
 As a QA engineer, you know the drill:
 
 - 📝 **Manual test case writing** - Spending hours documenting API requests and responses
-- 🔁 **Repetitive work** - Recreating the same tests in multiple formats (Postman, code, mocks)
+- 🔁 **Repetitive work** - Recreating the same tests manually for different scenarios
 - 🐛 **Missed edge cases** - Finding bugs in production because you didn't test the right scenarios
 - 💔 **Breaking changes** - APIs change without warning, and your tests break
 - ⏰ **Time pressure** - Developers ship fast, but testing can't keep up
@@ -49,7 +49,6 @@ As a QA engineer, you know the drill:
 TraceTap is an intelligent API testing toolkit that **captures real traffic and transforms it into everything you need**:
 
 ✅ Complete test suites
-✅ Postman collections
 ✅ Mock servers
 ✅ Contract tests
 ✅ Regression baselines
@@ -174,14 +173,8 @@ curl -k https://api.example.com/posts
 **Step 2: Generate Tests (2 minutes)**
 
 ```bash
-# Option A: Generate Playwright tests
+# Generate Playwright tests
 tracetap-playwright api-capture.json -o tests/
-
-# Option B: Generate Postman collection
-tracetap-ai-postman api-capture.json -o collection.json
-
-# Option C: Generate WireMock stubs
-tracetap2wiremock api-capture.json -o wiremock-stubs.json
 ```
 
 **Step 3: Run Tests (1 minute)**
@@ -189,8 +182,6 @@ tracetap2wiremock api-capture.json -o wiremock-stubs.json
 ```bash
 # Run generated tests
 pytest tests/
-
-# Or import to Postman and run there
 ```
 
 **From zero to comprehensive test suite in 5 minutes.**
@@ -206,10 +197,9 @@ pytest tests/
 | Task | Time Required |
 |------|--------------|
 | Write 50 test cases manually | 4 hours |
-| Create Postman collection | 1 hour |
-| Generate WireMock stubs | 1.5 hours |
 | Document API contracts | 2 hours |
-| **Total** | **8.5 hours** |
+| Set up mock servers | 1.5 hours |
+| **Total** | **7.5 hours** |
 
 ### After TraceTap
 
@@ -254,13 +244,10 @@ tracetap-playwright baseline.json -o tests/regression/
 # 1. Capture traffic to third-party API
 tracetap.py --listen 8080 --filter-host api.stripe.com --export stripe-traffic.json
 
-# 2. Generate WireMock stubs for offline testing
-tracetap2wiremock stripe-traffic.json -o stripe-stubs.json
-
-# 3. Run mock server locally
+# 2. Run mock server locally
 tracetap-replay mock stripe-traffic.json --port 8080
 
-# 4. Test your integration without hitting real API
+# 3. Test your integration without hitting real API
 # (No rate limits, no costs, no network dependency)
 ```
 
@@ -325,7 +312,7 @@ tracetap-playwright exploratory.json --ai-suggestions -o tests/
 
 ### AI-Powered Intelligence
 
-- **Test generation** - Create Playwright, Pytest, or Postman tests
+- **Test generation** - Create Playwright and Pytest tests automatically
 - **Variable extraction** - Auto-detect IDs, tokens, UUIDs, timestamps
 - **Flow inference** - Understand request sequences and dependencies
 - **Smart deduplication** - Remove redundant requests intelligently
@@ -458,22 +445,13 @@ tracetap.py --listen 8080 --filter-regex "api\..*\.com" --export apis.json
 # Generate Playwright tests
 tracetap-playwright captured.json -o tests/
 
-# Generate Postman collection
-tracetap-ai-postman captured.json -o collection.json
-
-# Generate WireMock stubs
-tracetap2wiremock captured.json -o stubs.json
-
 # Generate with AI suggestions
 tracetap-playwright captured.json --ai-suggestions -o tests/
 ```
 
-### Replay & Mock
+### Mock Server
 
 ```bash
-# Replay to different server
-tracetap-replay replay captured.json --target http://staging.example.com
-
 # Run mock server
 tracetap-replay mock captured.json --port 8080
 

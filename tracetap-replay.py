@@ -5,28 +5,15 @@ TraceTap Replay & Mock CLI
 Command-line interface for TraceTap traffic replay and mock server functionality.
 
 Commands:
-    replay              - Replay captured HTTP traffic
     mock                - Start mock HTTP server
-    variables           - Extract variables from captures
-    scenario            - Generate YAML replay scenario
-    validate            - Validate captured traffic
     generate-regression - Generate Playwright regression tests
     suggest-tests       - Generate AI-powered test suggestions
     create-contract     - Generate OpenAPI contract from traffic
     verify-contract     - Verify contract compatibility and detect breaking changes
 
 Examples:
-    # Replay traffic to new endpoint
-    python3 tracetap-replay.py replay session.json --target http://localhost:8080
-
     # Start mock server
     python3 tracetap-replay.py mock session.json --port 8080
-
-    # Extract variables with AI
-    python3 tracetap-replay.py variables session.json --ai
-
-    # Generate YAML scenario with AI
-    python3 tracetap-replay.py scenario session.json --output scenario.yaml --ai
 
     # Generate Playwright regression tests
     python3 tracetap-replay.py generate-regression session.json -o tests/regression.spec.ts
@@ -51,209 +38,9 @@ from typing import Optional
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
 
-from tracetap.replay import TrafficReplayer, VariableExtractor, ReplayConfig
-from tracetap.replay.replay_config import AIScenarioGenerator
 from tracetap.mock import MockServer, MockConfig, create_mock_server
 from tracetap.common import get_api_key_from_env, CaptureLoader
 from tracetap.generators.regression_generator import generate_regression_tests
-
-
-def cmd_replay(args):
-    """
-    Replay captured traffic to a target server.
-
-    Args:
-        args: Parsed command-line arguments
-    """
-    print(f"📡 TraceTap Traffic Replay")
-    print(f"   Log file: {args.log_file}")
-
-    if args.target:
-        print(f"   Target: {args.target}")
-
-    # Validate log file exists
-    if not Path(args.log_file).exists():
-        print(f"\n❌ Error: Log file not found")
-        print(f"   Path: {args.log_file}")
-        print(f"   Expected file at: {Path(args.log_file).absolute()}")
-        print(f"\nNext steps:")
-        print(f"  • Check the file path is correct")
-        print(f"  • Run: ls -la {args.log_file}")
-        print(f"  • Use --help to see examples")
-        sys.exit(1)
-
-    # Validate log file is readable JSON
-    try:
-        with open(args.log_file, 'r') as f:
-            json.load(f)
-    except json.JSONDecodeError as e:
-        print(f"\n❌ Error: Invalid JSON in log file")
-        print(f"   File: {args.log_file}")
-        print(f"   Error at line {e.lineno}, column {e.colno}: {e.msg}")
-        print(f"   Context: {e.doc[max(0, e.pos-20):e.pos+20]}")
-        print(f"\nNext steps:")
-        print(f"  • Fix JSON syntax (check for missing quotes, commas, etc)")
-        print(f"  • Use a JSON validator: python3 -m json.tool {args.log_file}")
-        sys.exit(1)
-    except Exception as e:
-        print(f"\n❌ Error: Cannot read log file")
-        print(f"   File: {args.log_file}")
-        print(f"   Reason: {e}")
-        print(f"\nNext steps:")
-        print(f"  • Ensure file is readable: chmod 644 {args.log_file}")
-        print(f"  • Check disk space and permissions")
-        sys.exit(1)
-
-    # Load replayer
-    try:
-        replayer = TrafficReplayer(
-            log_file=args.log_file,
-            timeout=args.timeout,
-            verify_ssl=not args.no_verify_ssl,
-            max_retries=args.retries
-        )
-    except FileNotFoundError:
-        print(f"\n❌ Error: Trace file not found")
-        print(f"   File: {args.log_file}")
-        sys.exit(1)
-    except ValueError as e:
-        print(f"\n❌ Error: Invalid log file format")
-        print(f"   Reason: {e}")
-        print(f"\nExpected format: JSON with HTTP request/response captures")
-        print(f"Example structure:")
-        print(f"  [")
-        print(f"    {{'method': 'GET', 'url': 'https://api.example.com/users', ...}},")
-        print(f"    {{'method': 'POST', 'url': 'https://api.example.com/users', ...}}")
-        print(f"  ]")
-        sys.exit(1)
-    except Exception as e:
-        print(f"\n❌ Failed to load captures")
-        print(f"   File: {args.log_file}")
-        print(f"   Error: {e}")
-        print(f"\nNext steps:")
-        print(f"  • Validate JSON: python3 -m json.tool {args.log_file}")
-        print(f"  • Check file size: ls -lh {args.log_file}")
-        print(f"  • Review examples: python3 tracetap-replay.py replay --help")
-        sys.exit(1)
-
-    # Validate target URL if provided
-    if args.target:
-        if not (args.target.startswith('http://') or args.target.startswith('https://')):
-            print(f"\n❌ Error: Invalid target URL")
-            print(f"   URL: {args.target}")
-            print(f"   Must start with http:// or https://")
-            print(f"\nExample:")
-            print(f"  python3 tracetap-replay.py replay session.json --target http://localhost:8080")
-            sys.exit(1)
-
-    # Validate worker count
-    if args.workers < 1:
-        print(f"\n❌ Error: Invalid worker count")
-        print(f"   Value: {args.workers}")
-        print(f"   Must be at least 1")
-        sys.exit(1)
-
-    # Validate timeout
-    if args.timeout < 1:
-        print(f"\n❌ Error: Invalid timeout")
-        print(f"   Value: {args.timeout} seconds")
-        print(f"   Must be at least 1 second")
-        sys.exit(1)
-
-    # Prepare variables with validation
-    variables = {}
-    if args.variables:
-        for var_pair in args.variables:
-            if '=' not in var_pair:
-                print(f"\n❌ Error: Invalid variable format")
-                print(f"   Variable: {var_pair}")
-                print(f"   Expected: KEY=VALUE")
-                print(f"\nExample:")
-                print(f"  python3 tracetap-replay.py replay session.json --variables userId=123 token=abc")
-                sys.exit(1)
-            key, value = var_pair.split('=', 1)
-            if not key.strip():
-                print(f"\n❌ Error: Variable key cannot be empty")
-                print(f"   Variable: {var_pair}")
-                print(f"   Expected: KEY=VALUE (KEY must not be empty)")
-                sys.exit(1)
-            variables[key] = value
-
-    # Create filter function if provided
-    filter_fn = None
-    if args.filter_method:
-        valid_methods = {'GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'}
-        methods = [m.upper() for m in args.filter_method]
-        invalid = [m for m in methods if m not in valid_methods]
-        if invalid:
-            print(f"\n❌ Error: Invalid HTTP methods")
-            print(f"   Invalid: {', '.join(invalid)}")
-            print(f"   Valid methods: {', '.join(sorted(valid_methods))}")
-            sys.exit(1)
-        filter_fn = lambda c: c.get('method', '').upper() in methods
-        print(f"   Filter methods: {', '.join(methods)}")
-
-    # Run replay
-    print()
-    try:
-        result = replayer.replay(
-            target_base_url=args.target,
-            variables=variables if variables else None,
-            max_workers=args.workers,
-            filter_fn=filter_fn,
-            verbose=args.verbose
-        )
-    except ConnectionError as e:
-        print(f"\n❌ Error: Cannot connect to target server")
-        print(f"   Target: {args.target}")
-        print(f"   Reason: {e}")
-        print(f"\nNext steps:")
-        print(f"  • Verify target server is running")
-        print(f"  • Test connectivity: curl -v {args.target}")
-        print(f"  • Check firewall/network settings")
-        sys.exit(1)
-    except Exception as e:
-        print(f"\n❌ Error during replay")
-        print(f"   Error: {e}")
-        if args.verbose:
-            import traceback
-            traceback.print_exc()
-        sys.exit(1)
-
-    # Save results if output specified
-    if args.output:
-        try:
-            output_path = Path(args.output)
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            replayer.save_result(result, args.output)
-            print(f"\n✅ Results saved to {args.output}")
-        except PermissionError:
-            print(f"\n❌ Error: Permission denied writing to output file")
-            print(f"   File: {args.output}")
-            print(f"\nNext steps:")
-            print(f"  • Check directory permissions: ls -ld {Path(args.output).parent}")
-            print(f"  • Try different output path")
-            sys.exit(1)
-        except Exception as e:
-            print(f"\n❌ Error: Failed to save results")
-            print(f"   File: {args.output}")
-            print(f"   Error: {e}")
-            sys.exit(1)
-
-    # Report results
-    print()
-    print(f"📊 Results:")
-    print(f"   Total replayed: {result.successful_replays + result.failed_replays}")
-    print(f"   Successful: {result.successful_replays}")
-    print(f"   Failed: {result.failed_replays}")
-
-    # Exit with error code if failures
-    if result.failed_replays > 0:
-        print(f"\n❌ Some replays failed. Review verbose output for details.")
-        sys.exit(1)
-    else:
-        print(f"\n✅ All replays successful!")
-        sys.exit(0)
 
 
 def cmd_mock(args):
@@ -413,388 +200,6 @@ def cmd_mock(args):
     except Exception as e:
         print(f"\n❌ Server error: {e}")
         sys.exit(1)
-
-
-def cmd_variables(args):
-    """
-    Extract variables from captured traffic.
-
-    Args:
-        args: Parsed command-line arguments
-    """
-    print(f"🔍 TraceTap Variable Extraction")
-    print(f"   Log file: {args.log_file}")
-
-    # Validate log file exists
-    if not Path(args.log_file).exists():
-        print(f"\n❌ Error: Log file not found")
-        print(f"   Path: {args.log_file}")
-        print(f"   Expected file at: {Path(args.log_file).absolute()}")
-        print(f"\nNext steps:")
-        print(f"  • Check the file path is correct")
-        print(f"  • Run: ls -la {args.log_file}")
-        sys.exit(1)
-
-    # Load captures using standardized loader
-    try:
-        loader = CaptureLoader(args.log_file)
-        captures = loader.load()
-    except json.JSONDecodeError as e:
-        print(f"\n❌ Error: Invalid JSON in log file")
-        print(f"   File: {args.log_file}")
-        print(f"   Error at line {e.lineno}, column {e.colno}: {e.msg}")
-        print(f"\nNext steps:")
-        print(f"  • Validate JSON: python3 -m json.tool {args.log_file}")
-        print(f"  • Fix syntax errors and try again")
-        sys.exit(1)
-    except FileNotFoundError:
-        print(f"\n❌ Error: Log file not found")
-        print(f"   File: {args.log_file}")
-        sys.exit(1)
-    except ValueError as e:
-        print(f"\n❌ Error: Invalid log file format")
-        print(f"   Reason: {e}")
-        print(f"\nExpected: JSON array of HTTP captures")
-        sys.exit(1)
-    except Exception as e:
-        print(f"\n❌ Failed to load captures")
-        print(f"   Error: {e}")
-        sys.exit(1)
-
-    if not captures:
-        print(f"\n⚠️  Warning: No captures found in log file")
-        print(f"   File: {args.log_file}")
-        print(f"   The file appears to be empty or contains no valid captures")
-        print(f"\nNext steps:")
-        print(f"  • Check file is not empty: wc -l {args.log_file}")
-        print(f"  • Validate JSON structure: python3 -m json.tool {args.log_file}")
-        print(f"  • Generate captures first, then extract variables")
-        sys.exit(1)
-
-    print(f"   Captures: {len(captures)}")
-    print()
-
-    # Create extractor (SECURITY: API key from environment only)
-    api_key = get_api_key_from_env()
-    if args.ai and not api_key:
-        print("⚠️  Warning: --ai flag set but ANTHROPIC_API_KEY not configured")
-        print("   Set it with: export ANTHROPIC_API_KEY=your_key")
-        print("   Falling back to pattern-based extraction")
-        print()
-
-    extractor = VariableExtractor(
-        captures=captures,
-        api_key=api_key,
-        use_ai=args.ai
-    )
-
-    # Extract variables
-    try:
-        variables = extractor.extract_variables(verbose=True)
-    except Exception as e:
-        print(f"\n❌ Error during variable extraction")
-        print(f"   Error: {e}")
-        sys.exit(1)
-
-    if not variables:
-        print(f"\n⚠️  No variables found in captures")
-        print(f"   Checked {len(captures)} captures")
-        print(f"\nPossible reasons:")
-        print(f"  • Captures only contain static data")
-        print(f"  • Variable patterns not recognized")
-        print(f"  • All values are constant across requests")
-        print(f"\nNext steps:")
-        print(f"  • Try with --ai flag for smarter extraction")
-        print(f"  • Review captures manually for variable patterns")
-        sys.exit(0)
-
-    print(f"\n📊 Found {len(variables)} variables:\n")
-
-    # Display results
-    for var in variables:
-        print(f"  • {var.name} ({var.type})")
-        print(f"    Locations: {', '.join(var.locations)}")
-        print(f"    Examples: {', '.join(var.example_values[:3])}")
-        if var.description:
-            print(f"    Description: {var.description}")
-        if var.pattern:
-            print(f"    Pattern: {var.pattern}")
-        print()
-
-    # Save to JSON if output specified
-    if args.output:
-        try:
-            output_path = Path(args.output)
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            output_data = [var.to_dict() for var in variables]
-            with open(args.output, 'w') as f:
-                json.dump(output_data, f, indent=2)
-            print(f"✅ Saved {len(variables)} variables to {args.output}")
-        except PermissionError:
-            print(f"\n❌ Error: Permission denied writing to output file")
-            print(f"   File: {args.output}")
-            print(f"\nNext steps:")
-            print(f"  • Check directory permissions: ls -ld {Path(args.output).parent}")
-            print(f"  • Try different output path")
-            sys.exit(1)
-        except Exception as e:
-            print(f"\n❌ Error: Failed to save variables")
-            print(f"   File: {args.output}")
-            print(f"   Error: {e}")
-            sys.exit(1)
-
-
-def cmd_scenario(args):
-    """
-    Generate YAML replay scenario from captures.
-
-    Args:
-        args: Parsed command-line arguments
-    """
-    print(f"📝 TraceTap Scenario Generation")
-    print(f"   Log file: {args.log_file}")
-
-    # Validate log file exists
-    if not Path(args.log_file).exists():
-        print(f"\n❌ Error: Log file not found")
-        print(f"   Path: {args.log_file}")
-        print(f"   Expected file at: {Path(args.log_file).absolute()}")
-        print(f"\nNext steps:")
-        print(f"  • Check the file path is correct")
-        print(f"  • Run: ls -la {args.log_file}")
-        sys.exit(1)
-
-    # Load captures using standardized loader
-    try:
-        loader = CaptureLoader(args.log_file)
-        captures = loader.load()
-    except json.JSONDecodeError as e:
-        print(f"\n❌ Error: Invalid JSON in log file")
-        print(f"   File: {args.log_file}")
-        print(f"   Error at line {e.lineno}, column {e.colno}: {e.msg}")
-        print(f"\nNext steps:")
-        print(f"  • Validate JSON: python3 -m json.tool {args.log_file}")
-        print(f"  • Fix syntax errors")
-        sys.exit(1)
-    except FileNotFoundError:
-        print(f"\n❌ Error: Log file not found")
-        print(f"   File: {args.log_file}")
-        sys.exit(1)
-    except Exception as e:
-        print(f"\n❌ Failed to load captures")
-        print(f"   Error: {e}")
-        sys.exit(1)
-
-    if not captures:
-        print(f"\n❌ Error: No captures found in log file")
-        print(f"   File: {args.log_file}")
-        print(f"   Cannot generate scenario from empty data")
-        print(f"\nNext steps:")
-        print(f"  • Check if file is not empty: wc -l {args.log_file}")
-        print(f"  • Validate JSON: python3 -m json.tool {args.log_file}")
-        print(f"  • Generate captures first")
-        sys.exit(1)
-
-    print(f"   Captures: {len(captures)}")
-
-    if args.ai:
-        # Use AI to generate scenario (SECURITY: API key from environment only)
-        api_key = get_api_key_from_env()
-
-        if not api_key:
-            print("\n❌ Error: AI generation requires ANTHROPIC_API_KEY")
-            print("   Set it with: export ANTHROPIC_API_KEY=your_key")
-            print("\nObtain API key:")
-            print("  • Visit: https://console.anthropic.com/")
-            print("  • Create/manage API keys in account settings")
-            print("  • Copy key and set environment variable")
-            sys.exit(1)
-
-        print("   Mode: AI-powered (using Claude)")
-        print()
-
-        try:
-            generator = AIScenarioGenerator(api_key=api_key)
-
-            scenario = generator.generate_scenario(
-                captures=captures,
-                intent=args.intent or "",
-                scenario_name=args.name
-            )
-
-            if not scenario:
-                print("❌ Failed to generate scenario with AI")
-                print("   Claude returned empty scenario")
-                sys.exit(1)
-
-            print(f"✅ Generated scenario: {scenario.name}")
-            print(f"   Steps: {len(scenario.steps)}")
-        except ValueError as e:
-            print(f"\n❌ Error: Invalid API key")
-            print(f"   Reason: {e}")
-            print(f"\nNext steps:")
-            print(f"  • Check API key is valid: export ANTHROPIC_API_KEY=sk-...")
-            print(f"  • Verify account has API access")
-            sys.exit(1)
-        except Exception as e:
-            print(f"\n❌ Error generating scenario with AI")
-            print(f"   Error: {e}")
-            print(f"\nNext steps:")
-            print(f"  • Check internet connection")
-            print(f"  • Verify API key is valid and has quota")
-            print(f"  • Try again with --intent for better results")
-            sys.exit(1)
-
-    else:
-        # Manual scenario creation (basic)
-        print("   Mode: Manual (requires --ai for intelligent generation)")
-        print()
-        print("✨ Use --ai flag for intelligent scenario generation:")
-        print(f"   python3 tracetap-replay.py scenario {args.log_file} --ai")
-        print(f"   python3 tracetap-replay.py scenario {args.log_file} --ai --intent 'User registration flow'")
-        sys.exit(1)
-
-    # Save scenario
-    output_path = args.output or 'scenario.yaml'
-    try:
-        output_file = Path(output_path)
-        output_file.parent.mkdir(parents=True, exist_ok=True)
-        config = ReplayConfig()
-        config.scenario = scenario
-        config.save(output_path)
-        print(f"\n✅ Saved scenario to {output_path}")
-    except PermissionError:
-        print(f"\n❌ Error: Permission denied writing to output file")
-        print(f"   File: {output_path}")
-        print(f"\nNext steps:")
-        print(f"  • Check directory permissions: ls -ld {output_file.parent}")
-        print(f"  • Try different output path")
-        sys.exit(1)
-    except Exception as e:
-        print(f"\n❌ Error: Failed to save scenario")
-        print(f"   File: {output_path}")
-        print(f"   Error: {e}")
-        sys.exit(1)
-
-
-def cmd_validate(args):
-    """
-    Validate captured traffic and report issues.
-
-    Args:
-        args: Parsed command-line arguments
-    """
-    print(f"✓ TraceTap Traffic Validation")
-    print(f"   Log file: {args.log_file}")
-
-    # Validate log file exists
-    if not Path(args.log_file).exists():
-        print(f"\n❌ Error: Log file not found")
-        print(f"   Path: {args.log_file}")
-        print(f"   Expected file at: {Path(args.log_file).absolute()}")
-        print(f"\nNext steps:")
-        print(f"  • Check the file path is correct")
-        print(f"  • Run: ls -la {args.log_file}")
-        sys.exit(1)
-
-    # Load captures using standardized loader
-    try:
-        loader = CaptureLoader(args.log_file)
-        captures = loader.load()
-    except json.JSONDecodeError as e:
-        print(f"\n❌ Error: Invalid JSON in log file")
-        print(f"   File: {args.log_file}")
-        print(f"   Error at line {e.lineno}, column {e.colno}: {e.msg}")
-        print(f"\nNext steps:")
-        print(f"  • Validate JSON: python3 -m json.tool {args.log_file}")
-        print(f"  • Fix syntax errors (missing quotes, commas, etc)")
-        sys.exit(1)
-    except FileNotFoundError:
-        print(f"\n❌ Error: Log file not found")
-        print(f"   File: {args.log_file}")
-        sys.exit(1)
-    except Exception as e:
-        print(f"\n❌ Failed to load captures")
-        print(f"   Error: {e}")
-        sys.exit(1)
-
-    if not captures:
-        print(f"\n❌ Error: No captures found")
-        print(f"   File: {args.log_file} is empty")
-        print(f"\nNext steps:")
-        print(f"  • Check file size: ls -lh {args.log_file}")
-        print(f"  • Generate captures using TraceTap first")
-        sys.exit(1)
-
-    print(f"   Total captures: {len(captures)}")
-    print()
-
-    # Validation checks
-    errors = []
-    warnings = []
-
-    # Check for required fields
-    for i, capture in enumerate(captures):
-        if 'method' not in capture:
-            errors.append(f"Capture {i}: Missing 'method' field (required: GET, POST, etc)")
-        if 'url' not in capture:
-            errors.append(f"Capture {i}: Missing 'url' field (required: https://...)")
-        if 'status' not in capture:
-            warnings.append(f"Capture {i}: Missing 'status' field (expected: 200, 404, etc)")
-
-    # Check for error responses
-    error_count = sum(1 for c in captures if c.get('status', 0) >= 400)
-    if error_count > 0:
-        error_pct = (error_count / len(captures)) * 100
-        warnings.append(f"{error_count} captures ({error_pct:.1f}%) have error status codes (4xx/5xx)")
-
-    # Check for missing response bodies
-    missing_bodies = sum(1 for c in captures if not c.get('resp_body'))
-    if missing_bodies > 0:
-        body_pct = (missing_bodies / len(captures)) * 100
-        warnings.append(f"{missing_bodies} captures ({body_pct:.1f}%) have empty response bodies")
-
-    # Check for duplicate URLs
-    urls = [c.get('url') for c in captures]
-    unique_urls = len(set(urls))
-    if unique_urls < len(urls):
-        dup_count = len(urls) - unique_urls
-        warnings.append(f"{dup_count} duplicate URL(s) detected")
-
-    # Report results
-    if errors:
-        print("❌ ERRORS FOUND - Cannot use for replay:")
-        for error in errors:
-            print(f"   • {error}")
-        print()
-
-    if warnings:
-        print("⚠️  WARNINGS - May impact replay:")
-        for warning in warnings:
-            print(f"   • {warning}")
-        print()
-
-    if not errors and not warnings:
-        print("✅ All validations passed!")
-        print(f"\n   Status:")
-        print(f"   • All required fields present")
-        print(f"   • No error responses detected")
-        print(f"   • All responses have bodies")
-        print(f"\n   Ready to use for:")
-        print(f"   • Replay: python3 tracetap-replay.py replay {args.log_file} --target http://localhost:8080")
-        print(f"   • Mock server: python3 tracetap-replay.py mock {args.log_file} --port 8080")
-    else:
-        print(f"📊 Summary:")
-        print(f"   Errors: {len(errors)}")
-        print(f"   Warnings: {len(warnings)}")
-        print()
-        if errors:
-            print("   Fix errors before using for replay/mock")
-
-    # Exit with error if there are errors
-    if errors:
-        sys.exit(1)
-
 
 def cmd_generate_regression(args):
     """
@@ -1339,17 +744,8 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Replay traffic to localhost
-  %(prog)s replay session.json --target http://localhost:8080
-
   # Start mock server with fuzzy matching
   %(prog)s mock session.json --port 8080 --strategy fuzzy
-
-  # Extract variables with AI
-  %(prog)s variables session.json --ai --output variables.json
-
-  # Generate test scenario with AI
-  %(prog)s scenario session.json --ai --intent "User registration flow" --output test.yaml
 
   # Generate Playwright regression tests
   %(prog)s generate-regression session.json -o tests/regression.spec.ts --assert-schema
@@ -1357,27 +753,17 @@ Examples:
   # Generate AI test suggestions
   %(prog)s suggest-tests session.json -o suggestions.md
 
-  # Validate captured traffic
-  %(prog)s validate session.json
+  # Generate OpenAPI contract
+  %(prog)s create-contract session.json -o contract.yaml
+
+  # Verify contract compatibility
+  %(prog)s verify-contract baseline.yaml current.yaml --fail-on-breaking
 
 For more information: https://github.com/yourusername/tracetap
         """
     )
 
     subparsers = parser.add_subparsers(dest='command', help='Command to run')
-
-    # --- REPLAY command ---
-    replay_parser = subparsers.add_parser('replay', help='Replay captured traffic')
-    replay_parser.add_argument('log_file', help='TraceTap JSON log file')
-    replay_parser.add_argument('-t', '--target', help='Target base URL (e.g., http://localhost:8080)')
-    replay_parser.add_argument('-v', '--variables', nargs='+', help='Variables (key=value)')
-    replay_parser.add_argument('-w', '--workers', type=int, default=5, help='Concurrent workers (default: 5)')
-    replay_parser.add_argument('--timeout', type=int, default=30, help='Request timeout in seconds (default: 30)')
-    replay_parser.add_argument('--retries', type=int, default=3, help='Max retries per request (default: 3)')
-    replay_parser.add_argument('--no-verify-ssl', action='store_true', help='Disable SSL verification')
-    replay_parser.add_argument('--filter-method', nargs='+', help='Filter by HTTP methods (e.g., GET POST)')
-    replay_parser.add_argument('-o', '--output', help='Save results to JSON file')
-    replay_parser.add_argument('--verbose', action='store_true', help='Verbose output')
 
     # --- MOCK command ---
     mock_parser = subparsers.add_parser('mock', help='Start mock HTTP server')
@@ -1403,24 +789,6 @@ For more information: https://github.com/yourusername/tracetap
     mock_parser.add_argument('--diff-limit', type=int, default=100, help='Maximum diffs to store (default: 100, 0=unlimited)')
     mock_parser.add_argument('--no-cache', action='store_true', help='Disable match result caching')
     mock_parser.add_argument('--cache-size', type=int, default=1000, help='Maximum cache entries (default: 1000)')
-
-    # --- VARIABLES command ---
-    variables_parser = subparsers.add_parser('variables', help='Extract variables from captures')
-    variables_parser.add_argument('log_file', help='TraceTap JSON log file')
-    variables_parser.add_argument('--ai', action='store_true', help='Use Claude AI for intelligent extraction. Requires ANTHROPIC_API_KEY env var')
-    variables_parser.add_argument('-o', '--output', help='Save variables to JSON file')
-
-    # --- SCENARIO command ---
-    scenario_parser = subparsers.add_parser('scenario', help='Generate YAML replay scenario')
-    scenario_parser.add_argument('log_file', help='TraceTap JSON log file')
-    scenario_parser.add_argument('--ai', action='store_true', help='Use Claude AI for intelligent generation. Requires ANTHROPIC_API_KEY env var')
-    scenario_parser.add_argument('--intent', help='Scenario intent description for AI')
-    scenario_parser.add_argument('--name', help='Scenario name')
-    scenario_parser.add_argument('-o', '--output', help='Output YAML file (default: scenario.yaml)')
-
-    # --- VALIDATE command ---
-    validate_parser = subparsers.add_parser('validate', help='Validate captured traffic')
-    validate_parser.add_argument('log_file', help='TraceTap JSON log file')
 
     # --- GENERATE-REGRESSION command ---
     regression_parser = subparsers.add_parser('generate-regression',
@@ -1482,16 +850,8 @@ For more information: https://github.com/yourusername/tracetap
     args = parser.parse_args()
 
     # Dispatch to command handler
-    if args.command == 'replay':
-        cmd_replay(args)
-    elif args.command == 'mock':
+    if args.command == 'mock':
         cmd_mock(args)
-    elif args.command == 'variables':
-        cmd_variables(args)
-    elif args.command == 'scenario':
-        cmd_scenario(args)
-    elif args.command == 'validate':
-        cmd_validate(args)
     elif args.command == 'generate-regression':
         cmd_generate_regression(args)
     elif args.command == 'suggest-tests':
