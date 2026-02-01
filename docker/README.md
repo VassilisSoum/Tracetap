@@ -80,19 +80,7 @@ docker run -it --rm \
     --raw-log /captures/api-only.json
 ```
 
-### 3. Generate AI-Enhanced Postman Collection
-
-```bash
-docker run -it --rm \
-  -v $(pwd)/captures:/captures \
-  -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
-  tracetap/tracetap \
-  python tracetap-ai-postman.py \
-    /captures/session.json \
-    -o /captures/ai-collection.json
-```
-
-### 4. Run Mock Server
+### 3. Run Mock Server
 
 ```bash
 docker run -it --rm \
@@ -109,7 +97,7 @@ docker run -it --rm \
 
 **Access mock server:** `http://localhost:9000`
 
-### 5. Replay Traffic to Staging
+### 4. Replay Traffic to Staging
 
 ```bash
 docker run -it --rm \
@@ -121,7 +109,7 @@ docker run -it --rm \
     --workers 5
 ```
 
-### 6. Generate Playwright Tests
+### 5. Generate Playwright Tests
 
 ```bash
 docker run -it --rm \

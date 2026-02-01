@@ -76,7 +76,6 @@ If you're ready to record right now:
 - Multiple export formats:
   - Postman collections
   - Pytest test suites
-  - WireMock stubs
   - OpenAPI specifications
   - Contract definitions
 

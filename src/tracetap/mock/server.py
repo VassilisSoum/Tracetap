@@ -6,7 +6,6 @@ FastAPI-based HTTP mock server that serves responses from captured traffic.
 Features:
 - Request matching (exact, fuzzy, pattern-based)
 - Response serving from captures
-- Chaos engineering (delays, errors, failures)
 - Admin API for runtime configuration
 - Metrics and logging
 """
@@ -71,11 +70,6 @@ class MockConfig:
     cache_enabled: bool = True  # Enable match result caching for performance
     cache_max_size: int = 1000  # Maximum cache entries (FIFO eviction when full)
 
-    # Chaos engineering
-    chaos_enabled: bool = False
-    chaos_failure_rate: float = 0.0  # 0.0 to 1.0
-    chaos_error_status: int = 500
-
     # Fallback behavior
     fallback_status: int = 404
     fallback_body: str = '{"error": "No matching request found in captures"}'
@@ -98,7 +92,6 @@ class MockMetrics:
     total_requests: int = 0
     matched_requests: int = 0
     unmatched_requests: int = 0
-    chaos_failures: int = 0
     start_time: str = field(default_factory=lambda: datetime.now().isoformat())
 
     def to_dict(self) -> Dict[str, Any]:
@@ -108,7 +101,6 @@ class MockMetrics:
             'total_requests': self.total_requests,
             'matched_requests': self.matched_requests,
             'unmatched_requests': self.unmatched_requests,
-            'chaos_failures': self.chaos_failures,
             'match_rate': round((self.matched_requests / self.total_requests * 100) if self.total_requests > 0 else 0, 2),
             'uptime_seconds': round(uptime_seconds, 2),
             'start_time': self.start_time
@@ -130,9 +122,7 @@ class MockServer:
         # With custom config
         config = MockConfig(
             matching_strategy='fuzzy',
-            add_delay_ms=100,
-            chaos_enabled=True,
-            chaos_failure_rate=0.1
+            add_delay_ms=100
         )
         server = MockServer('session.json', config=config)
         server.start()
@@ -226,8 +216,6 @@ class MockServer:
                 return JSONResponse(content={
                     'matching_strategy': self.config.matching_strategy,
                     'add_delay_ms': self.config.add_delay_ms,
-                    'chaos_enabled': self.config.chaos_enabled,
-                    'chaos_failure_rate': self.config.chaos_failure_rate,
                     'total_captures': len(self.captures)
                 })
 
@@ -240,10 +228,6 @@ class MockServer:
                     self.config.matching_strategy = body['matching_strategy']
                 if 'add_delay_ms' in body:
                     self.config.add_delay_ms = int(body['add_delay_ms'])
-                if 'chaos_enabled' in body:
-                    self.config.chaos_enabled = bool(body['chaos_enabled'])
-                if 'chaos_failure_rate' in body:
-                    self.config.chaos_failure_rate = float(body['chaos_failure_rate'])
 
                 return JSONResponse(content={'status': 'updated'})
 
@@ -488,17 +472,6 @@ class MockServer:
             timestamp = datetime.now().strftime("%H:%M:%S")
             print(f"[{timestamp}] {method} {url}")
 
-        # Apply chaos engineering if enabled
-        if self.config.chaos_enabled:
-            if self._should_trigger_chaos():
-                self.metrics.chaos_failures += 1
-                self.logger.warning(f"Chaos failure triggered for {method} {url}")
-                return Response(
-                    content=json.dumps({"error": "Chaos engineering failure"}),
-                    status_code=self.config.chaos_error_status,
-                    media_type="application/json"
-                )
-
         # Apply delay if configured
         await self._apply_delay()
 
@@ -725,11 +698,6 @@ class MockServer:
             await asyncio.sleep(delay_ms / 1000)
         elif self.config.add_delay_ms > 0:
             await asyncio.sleep(self.config.add_delay_ms / 1000)
-
-    def _should_trigger_chaos(self) -> bool:
-        """Determine if chaos engineering should trigger."""
-        import random
-        return random.random() < self.config.chaos_failure_rate
 
     def _extract_request_context(self, url: str, body: bytes) -> Dict[str, Any]:
         """
@@ -1202,9 +1170,6 @@ class MockServer:
         if self.config.admin_enabled:
             print(f"   Admin API: http://{actual_host}:{actual_port}{self.config.admin_prefix}/metrics")
 
-        if self.config.chaos_enabled:
-            print(f"   ⚠️  Chaos mode enabled ({self.config.chaos_failure_rate * 100}% failure rate)")
-
         print()
 
         uvicorn.run(
@@ -1232,8 +1197,6 @@ def create_mock_server(
     port: int = 8080,
     matching_strategy: str = "fuzzy",
     add_delay_ms: int = 0,
-    chaos_enabled: bool = False,
-    chaos_failure_rate: float = 0.0,
     ai_enabled: bool = False,
     ai_api_key: Optional[str] = None,
     response_mode: str = "static",
@@ -1252,8 +1215,6 @@ def create_mock_server(
         port: Port to bind to
         matching_strategy: Matching strategy (exact, fuzzy, pattern, semantic)
         add_delay_ms: Fixed delay in milliseconds
-        chaos_enabled: Enable chaos engineering
-        chaos_failure_rate: Chaos failure rate (0.0 to 1.0)
         ai_enabled: Enable AI-powered features
         ai_api_key: Anthropic API key for AI features
         response_mode: Response generation mode (static, template, transform, ai, intelligent)
@@ -1284,8 +1245,6 @@ def create_mock_server(
         port=port,
         matching_strategy=matching_strategy,
         add_delay_ms=add_delay_ms,
-        chaos_enabled=chaos_enabled,
-        chaos_failure_rate=chaos_failure_rate,
         ai_enabled=ai_enabled,
         ai_api_key=ai_api_key,
         response_mode=response_mode,

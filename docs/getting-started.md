@@ -36,9 +36,6 @@ pip install -r requirements.txt
 # Optional: For AI features (test generation, variable extraction)
 pip install -r requirements-ai.txt
 export ANTHROPIC_API_KEY='your-api-key-here'
-
-# Optional: For replay and mock server features
-pip install -r requirements-replay.txt
 ```
 
 ### Verify Installation
@@ -72,7 +69,7 @@ $env:HTTPS_PROXY = 'http://localhost:8080'
 In your first terminal, start the capture proxy:
 
 ```bash
-python tracetap.py --listen 8080 --export captured.json
+python tracetap.py --listen 8080 --raw-log captured.json
 ```
 
 You'll see output like:
@@ -99,8 +96,8 @@ curl -k https://api.example.com/endpoint
 
 You'll see requests appear in the TraceTap terminal:
 ```
-[16:43:12] → GET https://api.github.com/users/github
-[16:43:12] ← 200 OK (142ms)
+[16:43:12] -> GET https://api.github.com/users/github
+[16:43:12] <- 200 OK (142ms)
 ```
 
 ### Step 2: Stop and Export
@@ -109,7 +106,7 @@ After making requests, stop TraceTap with `Ctrl+C`:
 
 ```
 [16:44:00] Stopping proxy...
-[16:44:01] ✓ Exported 5 requests to captured.json
+[16:44:01] Exported 5 requests to captured.json
 ```
 
 ### Step 3: View Captured Traffic
@@ -137,7 +134,7 @@ Here's the complete flow from capture to testing:
 
 ```bash
 # Terminal 1: Start TraceTap
-python tracetap.py --listen 8080 --export api-capture.json
+python tracetap.py --listen 8080 --raw-log api-capture.json
 
 # Terminal 2: Generate traffic
 export HTTP_PROXY=http://localhost:8080
@@ -148,26 +145,20 @@ curl -k https://api.example.com/posts
 # Terminal 1: Press Ctrl+C to stop
 ```
 
-### 2. Generate Tests (2 minutes)
+### 2. Generate Tests with AI (2 minutes)
 
 ```bash
-# Option A: Generate Playwright tests
-python tracetap-playwright.py api-capture.json -o tests/
-
-# Option B: Generate Postman collection
-python tracetap-ai-postman.py api-capture.json -o postman-collection.json
-
-# Option C: Generate WireMock stubs
-python tracetap2wiremock.py api-capture.json -o wiremock-stubs.json
+# Generate Playwright tests with AI suggestions
+python tracetap-playwright.py api-capture.json \
+  --ai-suggestions \
+  -o tests/
 ```
 
-### 3. Verify Tests (1 minute)
+### 3. Run Tests (1 minute)
 
 ```bash
 # Run generated tests
-pytest tests/  # if you generated Playwright tests
-
-# Or use Postman, WireMock, etc.
+pytest tests/
 ```
 
 ---
@@ -182,9 +173,9 @@ pytest tests/  # if you generated Playwright tests
    - Debug mode
 
 2. **[Generating Tests](guides/generating-tests.md)** - Create tests from captures
-   - Playwright test generation
-   - Postman collection export
-   - WireMock stub generation
+   - AI-powered test generation
+   - Focus areas (security, edge cases)
+   - Custom test structures
 
 3. **[Contract Verification](guides/contract-verification.md)** - Validate API contracts
    - Contract creation
@@ -199,8 +190,6 @@ pytest tests/  # if you generated Playwright tests
 
 ### Advanced Topics
 
-- **[Traffic Replay](guides/traffic-replay.md)** - Replay captured traffic to different servers
-- **[Mock Server](guides/mock-server.md)** - Run a mock HTTP server for offline development
 - **[CI/CD Integration](guides/ci-cd-integration.md)** - Automate with GitHub Actions, GitLab CI, etc.
 - **[CLI Reference](api/cli-reference.md)** - Complete command reference
 - **[Python API](api/python-api.md)** - Use TraceTap as a library
@@ -220,35 +209,23 @@ Having issues? Check [Troubleshooting Guide](troubleshooting.md) for:
 Here are some frequently used commands:
 
 ```bash
-# Basic capture with Postman export
-python tracetap.py --listen 8080 --export api.json
+# Basic capture with raw JSON export
+python tracetap.py --listen 8080 --raw-log api.json
 
 # Capture only specific host
-python tracetap.py --listen 8080 --filter-host api.example.com --export api.json
+python tracetap.py --listen 8080 --filter-host api.example.com --raw-log api.json
 
 # Capture with multiple filters (OR logic)
 python tracetap.py --listen 8080 \
   --filter-host api.example.com \
   --filter-host *.github.com \
-  --export api.json
+  --raw-log api.json
 
 # Capture using regex pattern
-python tracetap.py --listen 8080 --filter-regex "api\..*\.com" --export api.json
+python tracetap.py --listen 8080 --filter-regex "api\..*\.com" --raw-log api.json
 
-# Generate Playwright tests
-python tracetap-playwright.py api.json -o tests/
-
-# Generate Postman collection with AI flow inference
-python tracetap-ai-postman.py api.json --infer-flow -o postman.json
-
-# Generate WireMock stubs
-python tracetap2wiremock.py api.json -o wiremock.json
-
-# Replay captured traffic
-python tracetap-replay.py replay api.json --target http://localhost:8080
-
-# Start mock server
-python tracetap-replay.py mock api.json --port 8080
+# Generate Playwright tests with AI
+python tracetap-playwright.py api.json --ai-suggestions -o tests/
 ```
 
 ---
@@ -266,8 +243,7 @@ python tracetap-replay.py mock api.json --port 8080
 
 Pick your next action:
 
-- ✅ **Just captured traffic?** → Read [Generating Tests](guides/generating-tests.md)
-- ✅ **Need to replay traffic?** → Read [Traffic Replay](guides/traffic-replay.md)
-- ✅ **Want to understand contracts?** → Read [Contract Testing](guides/contract-verification.md)
-- ✅ **Integrating with CI/CD?** → Read [CI/CD Integration](guides/ci-cd-integration.md)
-- ✅ **Hitting issues?** → Check [Troubleshooting](troubleshooting.md)
+- **Just captured traffic?** -> Read [Generating Tests](guides/generating-tests.md)
+- **Want to understand contracts?** -> Read [Contract Testing](guides/contract-verification.md)
+- **Integrating with CI/CD?** -> Read [CI/CD Integration](guides/ci-cd-integration.md)
+- **Hitting issues?** -> Check [Troubleshooting](troubleshooting.md)

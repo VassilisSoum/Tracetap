@@ -22,7 +22,7 @@ def test_imports():
         return False
     
     try:
-        from exporters import PostmanExporter, RawLogExporter
+        from exporters import RawLogExporter
         print("   ✓ exporters.py")
     except ImportError as e:
         print(f"   ✗ exporters.py - {e}")
@@ -106,11 +106,11 @@ def test_utils():
 def test_exporters():
     """Test exporter functionality."""
     print("\n🧪 Testing exporters...")
-    
-    from exporters import PostmanExporter, RawLogExporter
+
+    from exporters import RawLogExporter
     import tempfile
     import json
-    
+
     # Create sample data
     sample_records = [{
         "time": "2025-10-27T10:00:00",
@@ -125,26 +125,11 @@ def test_exporters():
         "resp_body": '{"result": "ok"}',
         "duration_ms": 100
     }]
-    
-    # Test Postman export
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-        temp_path = f.name
-    
-    try:
-        PostmanExporter.export(sample_records, "test-session", temp_path)
-        with open(temp_path, 'r') as f:
-            data = json.load(f)
-            assert "info" in data
-            assert "item" in data
-            assert len(data["item"]) == 1
-        print("   ✓ PostmanExporter")
-    finally:
-        Path(temp_path).unlink(missing_ok=True)
-    
+
     # Test Raw Log export
     with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
         temp_path = f.name
-    
+
     try:
         RawLogExporter.export(sample_records, "test-session", temp_path, [], "")
         with open(temp_path, 'r') as f:
@@ -155,7 +140,7 @@ def test_exporters():
         print("   ✓ RawLogExporter")
     finally:
         Path(temp_path).unlink(missing_ok=True)
-    
+
     return True
 
 

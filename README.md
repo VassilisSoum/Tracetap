@@ -2,16 +2,16 @@
 
 # TraceTap
 
-### Your API Testing Best Friend
+### AI-Powered API Test Generation
 
-**Stop writing test cases manually. Start capturing them automatically.**
+**Capture real traffic. Let Claude AI generate your tests.**
 
 [![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-1.0.0-brightgreen.svg)](https://github.com/VassilisSoum/tracetap/releases)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/VassilisSoum/tracetap/actions)
 
-[Quick Start](#quick-start) • [Features](#3-killer-features) • [Documentation](#documentation) • [Examples](#real-world-testing-workflows)
+[Quick Start](#quick-start) | [Features](#key-features) | [Documentation](#documentation) | [Examples](#real-world-workflows)
 
 </div>
 
@@ -20,13 +20,13 @@
 ## What QA Engineers Say
 
 > "I used to spend hours writing test cases manually. Now I just capture real traffic and TraceTap generates them automatically. Saved me 4 hours last week alone."
-> — QA Engineer, SaaS Startup
+> -- QA Engineer, SaaS Startup
 
 > "Regression testing used to be a nightmare. Now we capture baseline traffic, and TraceTap tells us exactly what broke when developers push changes."
-> — Test Lead, E-commerce Platform
+> -- Test Lead, E-commerce Platform
 
 > "The AI test suggestions caught edge cases I never would have thought of. It's like having a senior QA engineer reviewing every test suite."
-> — QA Automation Engineer, FinTech Company
+> -- QA Automation Engineer, FinTech Company
 
 ---
 
@@ -34,11 +34,11 @@
 
 As a QA engineer, you know the drill:
 
-- 📝 **Manual test case writing** - Spending hours documenting API requests and responses
-- 🔁 **Repetitive work** - Recreating the same tests manually for different scenarios
-- 🐛 **Missed edge cases** - Finding bugs in production because you didn't test the right scenarios
-- 💔 **Breaking changes** - APIs change without warning, and your tests break
-- ⏰ **Time pressure** - Developers ship fast, but testing can't keep up
+- **Manual test case writing** - Spending hours documenting API requests and responses
+- **Repetitive work** - Recreating the same tests manually for different scenarios
+- **Missed edge cases** - Finding bugs in production because you didn't test the right scenarios
+- **Breaking changes** - APIs change without warning, and your tests break
+- **Time pressure** - Developers ship fast, but testing can't keep up
 
 **What if you could eliminate all that busywork?**
 
@@ -46,73 +46,68 @@ As a QA engineer, you know the drill:
 
 ## The Solution
 
-TraceTap is an intelligent API testing toolkit that **captures real traffic and transforms it into everything you need**:
+TraceTap captures API traffic as raw JSON and uses **Claude AI** to intelligently transform it into everything you need:
 
-✅ Complete test suites
-✅ Mock servers
-✅ Contract tests
-✅ Regression baselines
-✅ AI-suggested edge cases
+- **Playwright test suites** - Complete, runnable tests with assertions
+- **AI-suggested edge cases** - Tests you didn't think to write
+- **Contract definitions** - Prevent breaking changes between services
+- **Mock servers** - Test without external dependencies
 
-**All from a single capture session.**
+**Capture once. Generate everything.**
 
 ---
 
-## 3 Killer Features
+## Key Features
 
-### 1️⃣ Automated Regression Testing
+### 1. Automated Test Generation
 
-**Catch breaking changes before they reach production.**
+**From traffic capture to running tests in minutes.**
 
 ![Regression Testing Demo](assets/demo-gifs/regression-testing.gif)
 
 **How it works:**
-1. Capture baseline traffic from your working API
-2. Generate assertion-based tests automatically
+1. Capture API traffic through TraceTap proxy
+2. Claude AI analyzes patterns and generates Playwright tests
 3. Run tests on every deployment
-4. Get alerted immediately when something breaks
+4. Get alerted when something breaks
 
 **Why QA teams love it:**
-- ✅ No manual test writing - capture real user workflows
-- ✅ Tests update automatically as APIs evolve
-- ✅ Catch schema changes, missing fields, status code changes
-- ✅ Integrates with CI/CD (GitHub Actions, GitLab CI, Jenkins)
+- No manual test writing - capture real user workflows
+- AI generates intelligent assertions
+- Tests catch schema changes, missing fields, status code issues
+- Integrates with CI/CD (GitHub Actions, GitLab CI, Jenkins)
 
-**Time saved:** From 2 hours of manual test writing → 2 minutes of traffic capture
-
-📚 **[Learn more: Regression Testing Guide](docs/features/regression-testing.md)**
+**Time saved:** From 2 hours of manual test writing to 5 minutes of capture + generation
 
 ---
 
-### 2️⃣ AI-Powered Test Suggestions
+### 2. AI-Powered Test Suggestions
 
-**Let AI find the gaps in your testing.**
+**Let Claude AI find the gaps in your testing.**
 
 ![AI Test Suggestions Demo](assets/demo-gifs/ai-suggestions.gif)
 
 **How it works:**
 1. Capture your API traffic
 2. AI analyzes patterns and suggests additional test cases
-3. Auto-generate executable tests for edge cases you missed
+3. Auto-generate tests for edge cases you missed
 4. Review and add to your test suite
 
 **AI suggests tests for:**
-- 🔍 **Edge cases** - Empty strings, null values, boundary conditions
-- ⚠️ **Error scenarios** - Invalid IDs, expired tokens, missing fields
-- 🔐 **Security** - SQL injection, XSS, sensitive data exposure
-- ⚡ **Performance** - Timeout handling, rate limiting
-- 🏃 **Concurrency** - Race conditions, simultaneous requests
+- **Edge cases** - Empty strings, null values, boundary conditions
+- **Error scenarios** - Invalid IDs, expired tokens, missing fields
+- **Security** - SQL injection, XSS, sensitive data exposure
+- **Performance** - Timeout handling, rate limiting
+- **Concurrency** - Race conditions, simultaneous requests
 
 **Example:**
-You test `GET /users/123` → AI suggests testing with invalid ID `999999`, empty results, unauthorized access, and more.
+You test `GET /users/123` -> AI suggests testing with invalid ID `999999`, empty results, unauthorized access, and more.
 
-**Result:** Your 20 tests become 60 comprehensive tests - all the important ones covered.
-
-📚 **[Learn more: AI Test Suggestions Guide](docs/features/ai-test-suggestions.md)**
+**Result:** Your 20 tests become 60 comprehensive tests.
 
 ---
 
-### 3️⃣ Contract Testing for Microservices
+### 3. Contract Testing
 
 **Prevent breaking changes between services.**
 
@@ -125,20 +120,16 @@ You test `GET /users/123` → AI suggests testing with invalid ID `999999`, empt
 - Nobody caught it before deployment
 
 **The solution:**
-1. Create contracts from captured traffic (agreed API specs)
+1. Define contracts from captured traffic
 2. Verify contracts in CI/CD pipelines
 3. Breaking changes get caught instantly
 4. Contracts serve as living documentation
 
 **Why it matters:**
-- ✅ Catch breaking changes in seconds, not days
-- ✅ Prevent production incidents from API changes
-- ✅ Automatic documentation that never goes stale
-- ✅ Safe API evolution across teams
-
-**Used by teams with:** Microservices, multi-team APIs, versioned APIs, external integrations
-
-📚 **[Learn more: Contract Testing Guide](docs/features/contract-testing.md)**
+- Catch breaking changes in seconds, not days
+- Prevent production incidents from API changes
+- Automatic documentation that never goes stale
+- Safe API evolution across teams
 
 ---
 
@@ -150,7 +141,7 @@ You test `GET /users/123` → AI suggests testing with invalid ID `999999`, empt
 # Install TraceTap
 pip install tracetap
 
-# For AI features (test generation, suggestions)
+# Set up Claude AI for test generation
 export ANTHROPIC_API_KEY='your-api-key-here'
 ```
 
@@ -160,21 +151,25 @@ export ANTHROPIC_API_KEY='your-api-key-here'
 
 ```bash
 # Start TraceTap proxy
-python tracetap.py --listen 8080 --export api-capture.json
+tracetap --listen 8080 --raw-log api-capture.json
 
 # In another terminal, make API requests
 export HTTP_PROXY=http://localhost:8080
+export HTTPS_PROXY=http://localhost:8080
 curl -k https://api.example.com/users
 curl -k https://api.example.com/posts
 
 # Stop capture (Ctrl+C)
 ```
 
-**Step 2: Generate Tests (2 minutes)**
+**Step 2: Generate Tests with AI (2 minutes)**
 
 ```bash
 # Generate Playwright tests
 tracetap-playwright api-capture.json -o tests/
+
+# With AI edge case suggestions
+tracetap-playwright api-capture.json --ai-suggestions -o tests/
 ```
 
 **Step 3: Run Tests (1 minute)**
@@ -185,8 +180,6 @@ pytest tests/
 ```
 
 **From zero to comprehensive test suite in 5 minutes.**
-
-📚 **[Full Getting Started Guide](docs/getting-started.md)**
 
 ---
 
@@ -213,17 +206,17 @@ pytest tests/
 
 ---
 
-## Real-World Testing Workflows
+## Real-World Workflows
 
 ### Workflow 1: Regression Testing
 
-**Scenario:** You need to ensure new deployments don't break existing functionality.
+**Scenario:** Ensure new deployments don't break existing functionality.
 
 ```bash
 # 1. Capture baseline traffic from working version
-tracetap.py --listen 8080 --export baseline.json
+tracetap --listen 8080 --raw-log baseline.json
 
-# 2. Generate regression tests
+# 2. Generate regression tests with AI
 tracetap-playwright baseline.json -o tests/regression/
 
 # 3. Add to CI/CD pipeline
@@ -236,52 +229,13 @@ tracetap-playwright baseline.json -o tests/regression/
 
 ---
 
-### Workflow 2: Testing Third-Party APIs
+### Workflow 2: Exploratory Testing with AI
 
-**Scenario:** You integrate with a third-party API and need to test your integration.
-
-```bash
-# 1. Capture traffic to third-party API
-tracetap.py --listen 8080 --filter-host api.stripe.com --export stripe-traffic.json
-
-# 2. Run mock server locally
-tracetap-replay mock stripe-traffic.json --port 8080
-
-# 3. Test your integration without hitting real API
-# (No rate limits, no costs, no network dependency)
-```
-
-**Outcome:** Fast, reliable integration tests that run anywhere.
-
----
-
-### Workflow 3: API Contract Verification
-
-**Scenario:** Two teams maintain services that depend on each other. You need to prevent breaking changes.
-
-```bash
-# Provider team: Generate contract from their API
-tracetap.py --listen 8080 --export provider-api.json
-# Create contract: contract.json
-
-# Consumer team: Verify contract before deployment
-tracetap-contract-verify contract.json --target http://staging-api.example.com
-
-# In CI/CD: Run contract verification
-# If contract breaks → deployment blocked
-```
-
-**Outcome:** Services stay in sync, no production surprises.
-
----
-
-### Workflow 4: Exploratory Testing with AI
-
-**Scenario:** You're testing a new API and want to find edge cases.
+**Scenario:** Testing a new API and want to find edge cases.
 
 ```bash
 # 1. Capture your initial testing session
-tracetap.py --listen 8080 --export exploratory.json
+tracetap --listen 8080 --raw-log exploratory.json
 
 # 2. Let AI suggest additional tests
 tracetap-playwright exploratory.json --ai-suggestions -o tests/
@@ -300,38 +254,80 @@ tracetap-playwright exploratory.json --ai-suggestions -o tests/
 
 ---
 
-## Core Features
+### Workflow 3: Contract Verification
 
-### Traffic Capture & Export
+**Scenario:** Two teams maintain services that depend on each other.
+
+```bash
+# Provider team: Capture API traffic
+tracetap --listen 8080 --raw-log provider-api.json
+
+# Create contract from captures
+tracetap-contract create provider-api.json -o contract.json
+
+# Consumer team: Verify contract before deployment
+tracetap-contract verify contract.json --target http://staging-api.example.com
+
+# In CI/CD: Run contract verification
+# If contract breaks -> deployment blocked
+```
+
+**Outcome:** Services stay in sync, no production surprises.
+
+---
+
+### Workflow 4: Local Development with Mock Server
+
+**Scenario:** Develop and test against APIs without network dependencies.
+
+```bash
+# 1. Capture traffic from real API
+tracetap --listen 8080 --raw-log captured-api.json
+
+# 2. Run mock server locally
+tracetap-mock captured-api.json --port 9000
+
+# 3. Point your app to the mock
+export API_URL=http://localhost:9000
+
+# 4. Develop and test without external dependencies
+# No rate limits, no network issues, instant responses
+```
+
+**Outcome:** Fast, reliable local development.
+
+---
+
+## Core Capabilities
+
+### Traffic Capture
 
 - **HTTP/HTTPS proxy** - Capture all API traffic transparently
 - **Smart filtering** - Host matching, wildcards, regex patterns
-- **Multiple formats** - Postman Collections, OpenAPI, Raw JSON, WireMock stubs
+- **Raw JSON export** - Complete request/response data for AI processing
 - **Real-time monitoring** - See requests as they happen
 - **Certificate management** - Auto-install HTTPS certificates
 
 ### AI-Powered Intelligence
 
-- **Test generation** - Create Playwright and Pytest tests automatically
+- **Test generation** - Create Playwright tests automatically via Claude AI
 - **Variable extraction** - Auto-detect IDs, tokens, UUIDs, timestamps
 - **Flow inference** - Understand request sequences and dependencies
 - **Smart deduplication** - Remove redundant requests intelligently
 - **Gap analysis** - Suggest tests you haven't written yet
 
-### Testing & Mocking
+### Testing & Verification
 
-- **Traffic replay** - Replay captured requests to different environments
-- **Mock server** - Run offline mock servers for development
+- **Generated tests** - Playwright/Pytest tests from captured traffic
 - **Contract testing** - Prevent breaking changes between services
+- **Mock server** - Run offline mock APIs for development
 - **Regression baselines** - Compare API versions automatically
-- **Chaos engineering** - Simulate failures, delays, errors
 
 ### Developer Experience
 
 - **One-command setup** - Install and run in minutes
 - **CLI-first design** - Scriptable and automatable
 - **CI/CD ready** - Works with GitHub Actions, GitLab CI, Jenkins
-- **Documentation** - Comprehensive guides and examples
 - **Open source** - MIT licensed, community-driven
 
 ---
@@ -342,15 +338,13 @@ tracetap-playwright exploratory.json --ai-suggestions -o tests/
 
 - Python 3.8 or higher
 - pip (Python package manager)
+- Anthropic API key (for AI features)
 
 ### Install
 
 ```bash
 # Basic installation
 pip install tracetap
-
-# With replay/mock server features
-pip install tracetap[replay]
 
 # For development
 pip install tracetap[dev]
@@ -359,14 +353,14 @@ pip install tracetap[dev]
 pip install tracetap[all]
 ```
 
-### Configure AI Features (Optional)
+### Configure AI Features
 
 ```bash
 # Get API key from https://console.anthropic.com/
 export ANTHROPIC_API_KEY='sk-ant-...'
 
 # Verify it works
-python -c "import anthropic; print('✓ API key configured')"
+python -c "import anthropic; print('API key configured')"
 ```
 
 ### Install Certificate (For HTTPS)
@@ -382,7 +376,55 @@ python -m tracetap.cert_installer install
 python -m tracetap.cert_installer verify
 ```
 
-📚 **[Detailed Installation Guide](docs/getting-started.md#installation)**
+---
+
+## Command Reference
+
+### Capture Traffic
+
+```bash
+# Capture all traffic to raw JSON
+tracetap --listen 8080 --raw-log captured.json
+
+# Capture specific host
+tracetap --listen 8080 --filter-host api.example.com --raw-log api.json
+
+# Capture with wildcard
+tracetap --listen 8080 --filter-host "*.github.com" --raw-log github.json
+
+# Capture with regex pattern
+tracetap --listen 8080 --filter-regex "api\..*\.com" --raw-log apis.json
+```
+
+### Generate Tests
+
+```bash
+# Generate Playwright tests
+tracetap-playwright captured.json -o tests/
+
+# Generate with AI suggestions
+tracetap-playwright captured.json --ai-suggestions -o tests/
+```
+
+### Mock Server
+
+```bash
+# Run mock server from captured traffic
+tracetap-mock captured.json --port 9000
+```
+
+### Contract Testing
+
+```bash
+# Create contract from captures
+tracetap-contract create captured.json -o contract.json
+
+# Verify contract against live API
+tracetap-contract verify contract.json --target http://api.example.com
+
+# Generate contract tests
+tracetap-contract generate-tests contract.json -o tests/
+```
 
 ---
 
@@ -404,7 +446,6 @@ python -m tracetap.cert_installer verify
 
 - **[Capturing Traffic](docs/guides/capturing-traffic.md)** - Advanced capture techniques
 - **[Generating Tests](docs/guides/generating-tests.md)** - Create executable tests
-- **[Traffic Replay](docs/guides/traffic-replay.md)** - Replay to different environments
 - **[Mock Server](docs/guides/mock-server.md)** - Run offline mock APIs
 - **[CI/CD Integration](docs/guides/ci-cd-integration.md)** - Automate testing workflows
 - **[Contract Verification](docs/guides/contract-verification.md)** - Prevent breaking changes
@@ -421,67 +462,11 @@ python -m tracetap.cert_installer verify
 
 ---
 
-## Command Reference
-
-### Basic Capture
-
-```bash
-# Capture all traffic
-tracetap.py --listen 8080 --export captured.json
-
-# Capture specific host
-tracetap.py --listen 8080 --filter-host api.example.com --export api.json
-
-# Capture with wildcard
-tracetap.py --listen 8080 --filter-host "*.github.com" --export github.json
-
-# Capture with regex pattern
-tracetap.py --listen 8080 --filter-regex "api\..*\.com" --export apis.json
-```
-
-### Test Generation
-
-```bash
-# Generate Playwright tests
-tracetap-playwright captured.json -o tests/
-
-# Generate with AI suggestions
-tracetap-playwright captured.json --ai-suggestions -o tests/
-```
-
-### Mock Server
-
-```bash
-# Run mock server
-tracetap-replay mock captured.json --port 8080
-
-# Mock with chaos engineering
-tracetap-replay mock captured.json --port 8080 --chaos-delay 500 --chaos-error-rate 0.1
-```
-
-### Contract Testing
-
-```bash
-# Create contract from captures
-tracetap-contract create captured.json -o contract.json
-
-# Verify contract
-tracetap-contract verify contract.json --target http://api.example.com
-
-# Generate contract tests
-tracetap-contract generate-tests contract.json -o tests/
-```
-
-📚 **[Full CLI Reference](docs/api/cli-reference.md)**
-
----
-
 ## Examples
 
 Check out the `examples/` directory for complete workflows:
 
 - **[Regression Testing Example](examples/regression-testing/)** - Complete CI/CD workflow
-- **[API Mocking Example](examples/api-mocking/)** - Offline development setup
 - **[Contract Testing Example](examples/contract-testing/)** - Microservices verification
 - **[AI Test Generation Example](examples/ai-test-generation/)** - Intelligent test creation
 
@@ -491,10 +476,10 @@ Check out the `examples/` directory for complete workflows:
 
 We welcome contributions! Whether it's:
 
-- 🐛 Bug reports
-- 💡 Feature requests
-- 📝 Documentation improvements
-- 🔧 Code contributions
+- Bug reports
+- Feature requests
+- Documentation improvements
+- Code contributions
 
 See **[CONTRIBUTING.md](CONTRIBUTING.md)** for guidelines.
 
@@ -527,8 +512,8 @@ TraceTap is actively maintained and used in production by QA teams worldwide.
 
 <div align="center">
 
-**Made with ❤️ for QA Engineers**
+**Made for QA Engineers**
 
-[⬆ Back to Top](#tracetap)
+[Back to Top](#tracetap)
 
 </div>

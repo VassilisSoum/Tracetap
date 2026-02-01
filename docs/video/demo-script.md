@@ -117,13 +117,13 @@ None - Just screen captures with overlays
 **1:30-1:50** (20s) - Generate tests
 - Terminal showing AI generation:
   ```bash
-  $ tracetap-ai-postman.py captured.json \
-    -o postman-collection.json
+  $ export ANTHROPIC_API_KEY='your-api-key'
+  $ python -m tracetap.ai.suggest captured.json
 
   [14:32:30] Analyzing traffic...
   [14:32:35] Inferring request flows...
-  [14:32:40] Generating Postman collection...
-  ✓ Generated postman-collection.json
+  [14:32:40] Generating test suggestions...
+  ✓ Generated AI-powered test suggestions
   ```
 - VS Code opens showing generated `test_api_calls.py` file:
   - Test functions with clear names
@@ -138,13 +138,11 @@ None - Just screen captures with overlays
   ├── captured.json
   ├── postman-collection.json
   ├── test_api_calls.py
-  ├── wiremock-stubs.json
   └── contract.yaml
   ```
 - Each file appears with a label:
   - "✓ Postman Collection - Ready to import"
   - "✓ Pytest Tests - Run immediately"
-  - "✓ WireMock Stubs - Mock your API"
   - "✓ Contract Spec - Prevent breaking changes"
 - Text overlay: "Everything Generated. Everything Ready."
 

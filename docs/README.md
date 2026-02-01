@@ -99,24 +99,10 @@ Convert captured traffic into executable tests.
 
 **Document:** [Generating Tests Guide](guides/generating-tests.md)
 
-Three options:
-
-#### Option A: Playwright Tests (Automated)
+#### Playwright Tests (Automated)
 ```bash
 python tracetap-playwright.py api.json -o tests/
 pytest tests/  # Run tests
-```
-
-#### Option B: Postman Collection (Manual/Team)
-```bash
-python tracetap-ai-postman.py api.json --infer-flow -o postman.json
-# Import into Postman or run with Newman
-```
-
-#### Option C: WireMock Stubs (Mocking)
-```bash
-python tracetap2wiremock.py api.json -o wiremock-stubs.json
-# Run mock server for offline testing
 ```
 
 ---
@@ -262,8 +248,6 @@ jobs:
 |------|---------|---------|
 | **tracetap.py** | Capture traffic | `python tracetap.py --listen 8080 --export api.json` |
 | **tracetap-playwright.py** | Generate pytest tests | `python tracetap-playwright.py api.json -o tests/` |
-| **tracetap-ai-postman.py** | Generate Postman collection | `python tracetap-ai-postman.py api.json -o postman.json` |
-| **tracetap2wiremock.py** | Generate WireMock stubs | `python tracetap2wiremock.py api.json -o wiremock.json` |
 | **tracetap-replay.py** | Replay traffic / mock server | `python tracetap-replay.py replay api.json --target http://...` |
 
 **Full reference:** [CLI Reference](api/cli-reference.md)
@@ -275,17 +259,7 @@ jobs:
 Use TraceTap programmatically:
 
 ```python
-from src.tracetap.replay import TrafficReplayer
-from src.tracetap.mock import MockServer
 from src.tracetap.contract import ContractVerifier
-
-# Replay traffic
-replayer = TrafficReplayer('session.json')
-result = replayer.replay(target_base_url='http://localhost:8080')
-
-# Start mock server
-server = MockServer('session.json')
-server.start()
 
 # Verify contract
 verifier = ContractVerifier(contract)
@@ -376,13 +350,10 @@ Perfect for: **Offline development, isolation**
 # 1. Capture real API traffic
 python tracetap.py --listen 8080 --export api.json
 
-# 2. Generate stubs
-python tracetap2wiremock.py api.json -o wiremock-stubs.json
-
-# 3. Start mock server
+# 2. Start mock server
 python tracetap-replay.py mock api.json --port 8080
 
-# 4. Point your app to mock and develop
+# 3. Point your app to mock and develop
 API_URL=http://localhost:8080 npm test
 ```
 
@@ -445,7 +416,7 @@ Common issues covered:
 
 ### Core Features
 - [Capturing Traffic](guides/capturing-traffic.md) - HTTP/HTTPS proxy
-- [Generating Tests](guides/generating-tests.md) - Playwright, Postman, WireMock
+- [Generating Tests](guides/generating-tests.md) - Playwright and Postman tests
 - [Regression Testing](features/regression-testing.md) - Breaking change detection
 - [AI Test Suggestions](features/ai-test-suggestions.md) - Claude-powered test ideas
 - [Contract Testing](features/contract-testing.md) - Provider/consumer contracts

@@ -6,9 +6,8 @@ Common issues and their solutions.
 
 - [Installation Issues](#installation-issues)
 - [Capture Issues](#capture-issues)
-- [SSL/HTTPS Issues](#ssihttps-issues)
+- [SSL/HTTPS Issues](#sslhttps-issues)
 - [Test Generation Issues](#test-generation-issues)
-- [Replay & Mock Server Issues](#replay--mock-server-issues)
 - [CI/CD Issues](#cicd-issues)
 - [Performance Issues](#performance-issues)
 - [Getting Help](#getting-help)
@@ -129,7 +128,7 @@ curl http://localhost:8080
 4. **Check port is correct**:
 ```bash
 # Default is 8080, verify:
-python tracetap.py --listen 8080 --export api.json
+python tracetap.py --listen 8080 --raw-log api.json
 ```
 
 ### Port Already in Use
@@ -140,7 +139,7 @@ python tracetap.py --listen 8080 --export api.json
 
 ```bash
 # Use different port
-python tracetap.py --listen 8081 --export api.json
+python tracetap.py --listen 8081 --raw-log api.json
 
 # Or find and kill existing process
 lsof -ti:8080 | xargs kill -9
@@ -168,16 +167,16 @@ taskkill /PID <PID> /F
 ls -la captured.json
 
 # Or use different location
-python tracetap.py --listen 8080 --export /tmp/api.json
+python tracetap.py --listen 8080 --raw-log /tmp/api.json
 ```
 
 3. **Check filters aren't too restrictive**:
 ```bash
 # Run without filters first
-python tracetap.py --listen 8080 --export api.json
+python tracetap.py --listen 8080 --raw-log api.json
 
 # Then add filters
-python tracetap.py --listen 8080 --filter-host "api.example.com" --export api.json
+python tracetap.py --listen 8080 --filter-host "api.example.com" --raw-log api.json
 ```
 
 ### Filter Captures Too Much or Too Little
@@ -190,13 +189,13 @@ python tracetap.py --listen 8080 --filter-host "api.example.com" --export api.js
 python tracetap.py --listen 8080 \
   --filter-host "api.example.com" \
   --filter-verbose \
-  --export api.json
+  --raw-log api.json
 
 # Watch output to see which requests match
 # [16:43:12] REQUEST: GET https://api.example.com/users
-#            FILTER: api.example.com ✓ MATCH → CAPTURE
+#            FILTER: api.example.com MATCH -> CAPTURE
 # [16:43:13] REQUEST: GET https://other.com/endpoint
-#            FILTER: api.example.com ✗ no match → SKIP
+#            FILTER: api.example.com no match -> SKIP
 ```
 
 ---
@@ -340,7 +339,6 @@ curl https://api.example.com/users
 # Either:
 # - Update captures with new data
 # - Parameterize tests with variable IDs
-# - Use mock server instead
 ```
 
 ### Too Many Test Files Generated
@@ -353,11 +351,6 @@ curl https://api.example.com/users
 python tracetap-playwright.py captured.json \
   --class-name TestAPI \
   --test-file test_api \
-  -o tests/
-
-# Or filter captures first
-python tracetap-playwright.py captured.json \
-  --endpoint-filter "^/api/users" \
   -o tests/
 ```
 
@@ -386,7 +379,7 @@ msg = client.messages.create(
     max_tokens=10,
     messages=[{'role': 'user', 'content': 'test'}]
 )
-print('✓ API key works')
+print('API key works')
 "
 ```
 
@@ -397,110 +390,6 @@ curl https://api.anthropic.com
 
 # If behind proxy:
 export HTTPS_PROXY=http://proxy.example.com:8080
-```
-
----
-
-## Replay & Mock Server Issues
-
-### Port Already in Use for Mock Server
-
-**Problem**: `Address already in use: ('0.0.0.0', 8080)`
-
-**Solution**:
-```bash
-# Use different port
-python tracetap-replay.py mock api.json --port 9090
-
-# Or kill existing process
-lsof -ti:8080 | xargs kill -9
-```
-
-### Replay Requests Fail
-
-**Problem**: Replayed requests get different responses than captured
-
-**Solution**:
-
-1. **Check target URL**:
-```bash
-python tracetap-replay.py replay api.json \
-  --target http://localhost:8080 \
-  --verbose
-
-# Should show each request being replayed
-```
-
-2. **Check authentication**:
-```bash
-# If original requests had auth headers
-python tracetap-replay.py replay api.json \
-  --target http://localhost:8080 \
-  --variables auth_token=new_token
-```
-
-3. **Check data hasn't changed**:
-```bash
-# If replaying GET /users/123 but user 123 was deleted:
-# You'll get 404
-
-# Either:
-# - Use mock server instead
-# - Use variable substitution
-# - Update test data
-```
-
-### Mock Server Doesn't Match Requests
-
-**Problem**: Mock server returns "no matching stub found"
-
-**Solution**:
-
-1. **Check matching strategy**:
-```bash
-# Try different strategies
-python tracetap-replay.py mock api.json \
-  --port 8080 \
-  --strategy exact  # Strict matching
-
-# Or fuzzy (more lenient)
-python tracetap-replay.py mock api.json \
-  --port 8080 \
-  --strategy fuzzy
-```
-
-2. **Debug matching**:
-```bash
-python tracetap-replay.py mock api.json \
-  --port 8080 \
-  --verbose
-
-# Makes requests to mock and watch for matching
-curl http://localhost:8080/api/users/123
-```
-
-3. **Check stubs are valid**:
-```bash
-# Verify stubs file is valid JSON
-python -m json.tool wiremock-stubs.json > /dev/null
-
-# If it fails, JSON is invalid
-```
-
-### Chaos Engineering Not Working
-
-**Problem**: `--chaos` flag doesn't simulate failures
-
-**Solution**:
-```bash
-# Enable chaos and set rate
-python tracetap-replay.py mock api.json \
-  --port 8080 \
-  --chaos \
-  --chaos-rate 0.5  # 50% failure rate
-
-# Check admin endpoint for stats
-curl http://localhost:8080/__admin__/metrics
 ```
 
 ---
@@ -605,72 +494,13 @@ sys.exit(0 if result.passed else 1)
 
 ## Performance Issues
 
-### Replay is Slow
-
-**Problem**: Replaying traffic takes too long
-
-**Solution**:
-
-1. **Increase worker count**:
-```bash
-python tracetap-replay.py replay api.json \
-  --target http://localhost:8080 \
-  --workers 20  # Increase from default 5
-```
-
-2. **Increase timeout**:
-```bash
-python tracetap-replay.py replay api.json \
-  --target http://localhost:8080 \
-  --timeout 60  # Increased from default 30
-```
-
-3. **Filter requests**:
-```bash
-python tracetap-replay.py replay api.json \
-  --target http://localhost:8080 \
-  --filter-method GET  # Only GET requests
-
-# Or custom filter
-```
-
-### Mock Server is Slow
-
-**Problem**: Mock server responds slowly
-
-**Solution**:
-
-1. **Check matching strategy**:
-```bash
-# Fuzzy matching is slower
-python tracetap-replay.py mock api.json \
-  --port 8080 \
-  --strategy exact  # Faster
-```
-
-2. **Reduce stubs**:
-```bash
-# If thousands of stubs, reduce with filtering
-python tracetap2wiremock.py api.json \
-  --endpoint-filter "^/api/important" \
-  -o wiremock-stubs.json
-```
-
-3. **Monitor performance**:
-```bash
-# Check admin metrics
-curl http://localhost:8080/__admin__/metrics
-
-# Look for slow endpoints
-```
-
 ### Test Generation is Slow
 
 **Problem**: Generating tests takes minutes
 
 **Solution**:
 
-1. **Skip AI**:
+1. **Skip AI if not needed**:
 ```bash
 # Don't use --ai-suggestions if not needed
 python tracetap-playwright.py api.json -o tests/
@@ -693,6 +523,21 @@ python tracetap-playwright.py api.json \
   -o tests/
 ```
 
+### Large Capture Files
+
+**Problem**: Capture files are too large to process
+
+**Solution**:
+```bash
+# Use focused filtering during capture
+python tracetap.py --listen 8080 \
+  --filter-host api.myapp.com \
+  --raw-log captures.json
+
+# Or split captures by time
+# Ctrl+C after 5 minutes, start new capture
+```
+
 ---
 
 ## Getting Help
@@ -702,15 +547,10 @@ python tracetap-playwright.py api.json \
 **Enable debug logging**:
 ```bash
 # Capture with debug output
-python tracetap.py --listen 8080 --debug --export api.json
+python tracetap.py --listen 8080 --debug --raw-log api.json
 
 # Run tests with verbose output
 pytest tests/ -vv
-
-# Replay with verbose output
-python tracetap-replay.py replay api.json \
-  --target http://localhost:8080 \
-  --verbose
 ```
 
 ### Review Generated Code
@@ -719,12 +559,6 @@ python tracetap-replay.py replay api.json \
 ```bash
 # Test files
 cat tests/test_api_calls.py
-
-# Collections
-python -m json.tool postman.json | head -50
-
-# Stubs
-python -m json.tool wiremock-stubs.json | head -50
 ```
 
 ### Common Error Messages
@@ -743,7 +577,7 @@ pip install -r requirements.txt
 #### `Connection refused`
 
 ```bash
-# Can't connect to API or mock server
+# Can't connect to API
 # Check:
 # 1. Is server running?
 # 2. Correct port?
@@ -776,7 +610,7 @@ python --version
 cat src/tracetap/__init__.py | grep version
 
 # Error output
-python tracetap.py --debug --export api.json 2>&1 | head -100
+python tracetap.py --debug --raw-log api.json 2>&1 | head -100
 ```
 
 2. **Share details on GitHub**:

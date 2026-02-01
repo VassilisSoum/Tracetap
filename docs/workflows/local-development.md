@@ -25,7 +25,7 @@ pip install tracetap
 tracetap cert install
 
 # 3. Start capturing
-tracetap capture --port 8080 --export my-session.json
+tracetap capture --port 8080 --raw-log my-session.json
 ```
 
 In another terminal:
@@ -44,7 +44,7 @@ npm start
 
 ## Common Workflows
 
-### Workflow 1: Capture → Generate → Test
+### Workflow 1: Capture and Generate Tests
 
 **Use case:** Document new API and create tests
 
@@ -53,7 +53,7 @@ npm start
 tracetap capture \
   --port 8080 \
   --session-name "user-feature" \
-  --export user-feature.json
+  --raw-log user-feature.json
 
 # Terminal 2: Use your application
 # Click through the user feature manually
@@ -61,13 +61,9 @@ tracetap capture \
 
 # Back to Terminal 1: Stop with Ctrl+C
 
-# Generate Postman collection
-tracetap-ai-postman user-feature.json \
-  --output user-api-collection.json \
-  --ai
-
-# Generate Playwright tests
+# Generate Playwright tests with AI
 tracetap-playwright user-feature.json \
+  --ai-suggestions \
   --output tests/user-feature.spec.ts
 
 # Run the tests
@@ -86,7 +82,7 @@ tracetap capture \
   --port 8080 \
   --verbose \
   --debug \
-  --export debug-session.json
+  --raw-log debug-session.json
 
 # Reproduce the issue
 # Watch real-time output in terminal
@@ -100,36 +96,13 @@ cat debug-session.json | jq '.requests[] | select(.response.status >= 400)'
 
 **Result:** Complete request/response details for debugging.
 
-### Workflow 3: Mock External APIs
-
-**Use case:** Develop offline or against unstable APIs
-
-```bash
-# Step 1: Capture real API responses (once)
-tracetap capture \
-  --port 8080 \
-  --filter api.production.com \
-  --export prod-api-baseline.json
-
-# Stop after capturing sufficient traffic
-
-# Step 2: Start mock server
-tracetap-replay.py mock prod-api-baseline.json \
-  --port 8080
-
-# Step 3: Point your app to localhost:8080
-# Develop offline with realistic responses!
-```
-
-**Result:** Work without internet or against flaky external services.
-
-### Workflow 4: API Contract Validation
+### Workflow 3: API Contract Validation
 
 **Use case:** Ensure your changes don't break existing API
 
 ```bash
 # Capture baseline (first time)
-tracetap capture --port 8080 --export baseline.json
+tracetap capture --port 8080 --raw-log baseline.json
 # Use the app...
 # Ctrl+C
 
@@ -138,7 +111,7 @@ tracetap contract create baseline.json \
   --output contracts/baseline.yaml
 
 # Later, after making changes:
-tracetap capture --port 8080 --export current.json
+tracetap capture --port 8080 --raw-log current.json
 # Test the changes...
 # Ctrl+C
 
@@ -155,27 +128,6 @@ tracetap contract verify \
 ```
 
 **Result:** Catch breaking changes before pushing to production.
-
-### Workflow 5: Update Existing Collections
-
-**Use case:** Keep Postman collections in sync with API changes
-
-```bash
-# Capture new traffic
-tracetap capture --port 8080 --export new-endpoints.json
-
-# Update existing collection
-tracetap-update-collection.py \
-  existing-collection.json \
-  new-endpoints.json \
-  --output updated-collection.json \
-  --merge-strategy smart
-
-# Import into Postman
-# File → Import → updated-collection.json
-```
-
-**Result:** Collection stays up-to-date with minimal effort.
 
 ---
 
@@ -195,7 +147,7 @@ echo "Starting development session: $FEATURE_NAME"
 tracetap capture \
   --port 8080 \
   --session-name "$FEATURE_NAME" \
-  --export "captures/$FEATURE_NAME.json" \
+  --raw-log "captures/$FEATURE_NAME.json" \
   --verbose &
 
 CAPTURE_PID=$!
@@ -207,17 +159,13 @@ read
 # Stop capture
 kill $CAPTURE_PID
 
-echo "Generating documentation..."
-tracetap-ai-postman "captures/$FEATURE_NAME.json" \
-  --output "docs/$FEATURE_NAME-api.json" \
-  --ai
-
-echo "Generating tests..."
+echo "Generating tests with AI..."
 tracetap-playwright "captures/$FEATURE_NAME.json" \
+  --ai-suggestions \
   --output "tests/$FEATURE_NAME.spec.ts"
 
-echo "✓ Complete! Check:"
-echo "  - Docs: docs/$FEATURE_NAME-api.json"
+echo "Complete! Check:"
+echo "  - Captures: captures/$FEATURE_NAME.json"
 echo "  - Tests: tests/$FEATURE_NAME.spec.ts"
 ```
 
@@ -249,42 +197,26 @@ curl -x http://localhost:8080 https://api.example.com/users
 mkdir -p test-data/scenarios
 
 # Capture happy path
-tracetap capture --port 8080 --export test-data/scenarios/happy-path.json
+tracetap capture --port 8080 --raw-log test-data/scenarios/happy-path.json
 # ... test happy path ...
 
 # Capture error cases
-tracetap capture --port 8080 --export test-data/scenarios/error-cases.json
+tracetap capture --port 8080 --raw-log test-data/scenarios/error-cases.json
 # ... trigger errors ...
 
 # Capture edge cases
-tracetap capture --port 8080 --export test-data/scenarios/edge-cases.json
+tracetap capture --port 8080 --raw-log test-data/scenarios/edge-cases.json
 # ... test edge cases ...
 
-# Generate test suite
+# Generate test suite with AI
 for scenario in test-data/scenarios/*.json; do
   name=$(basename "$scenario" .json)
-  tracetap-playwright "$scenario" --output "tests/regression/$name.spec.ts"
+  tracetap-playwright "$scenario" \
+    --ai-suggestions \
+    --output "tests/regression/$name.spec.ts"
 done
 
 echo "Run tests with: npx playwright test tests/regression/"
-```
-
-### Pattern 4: Environment Comparison
-
-```bash
-# Capture from staging
-HTTP_PROXY=http://localhost:8080 \
-  curl https://staging-api.example.com/users > /dev/null 2>&1 &
-tracetap capture --port 8080 --export staging-traffic.json
-
-# Replay to production (read-only endpoints only!)
-tracetap-replay.py replay staging-traffic.json \
-  --target https://api.example.com \
-  --filter-method GET \
-  --output comparison.json
-
-# Check differences
-cat comparison.json | jq '.requests[] | select(.response_matches == false)'
 ```
 
 ---
@@ -322,7 +254,7 @@ cat debug.json | jq '.requests[0].response'
 tracetap capture \
   --port 8080 \
   --verbose \
-  --export auth-debug.json
+  --raw-log auth-debug.json
 
 # Extract auth headers
 cat auth-debug.json | jq '.requests[] | {url, auth: .headers.Authorization}'
@@ -335,7 +267,7 @@ cat auth-debug.json | jq -r '.requests[].headers.Authorization' | sort -u
 
 ```bash
 # Capture with timing
-tracetap capture --port 8080 --export timing.json
+tracetap capture --port 8080 --raw-log timing.json
 
 # Find slow requests (>1000ms)
 cat timing.json | jq '.requests[] | select(.duration_ms > 1000) | {url, duration_ms}'
@@ -350,7 +282,7 @@ cat timing.json | jq -r '.requests[] | [.duration_ms, .url] | @csv' | sort -rn
 # Capture multiple runs
 for i in {1..10}; do
   echo "Run $i"
-  tracetap capture --port 8080 --export "runs/run-$i.json" &
+  tracetap capture --port 8080 --raw-log "runs/run-$i.json" &
   PID=$!
   npm test
   kill $PID
@@ -374,12 +306,12 @@ Always name your sessions for easy identification:
 
 ```bash
 # Bad
-tracetap capture --port 8080 --export output.json
+tracetap capture --port 8080 --raw-log output.json
 
 # Good
 tracetap capture \
   --session-name "user-auth-flow-2024-01-15" \
-  --export captures/user-auth.json
+  --raw-log captures/user-auth.json
 ```
 
 ### Tip 2: Filter Aggressively
@@ -405,20 +337,17 @@ Add to your `.bashrc` or `.zshrc`:
 # Quick capture
 alias ttcap='tracetap capture --port 8080 --verbose'
 
-# Quick mock
-alias ttmock='tracetap-replay.py mock'
-
 # Quick test generation
 alias tttest='tracetap-playwright'
 
 # Capture with AI processing
-alias ttai='tracetap capture --port 8080 && tracetap-ai-postman'
+alias ttai='tracetap capture --port 8080 && tracetap-playwright'
 ```
 
 Usage:
 ```bash
-ttcap --export session.json
-tttest session.json --output tests/
+ttcap --raw-log session.json
+tttest session.json --ai-suggestions --output tests/
 ```
 
 ### Tip 4: Organize Captures
@@ -428,9 +357,9 @@ tttest session.json --output tests/
 mkdir -p captures/{features,bugs,exploration}
 
 # Save to appropriate location
-tracetap capture --export captures/features/user-registration.json
-tracetap capture --export captures/bugs/issue-123.json
-tracetap capture --export captures/exploration/new-api.json
+tracetap capture --raw-log captures/features/user-registration.json
+tracetap capture --raw-log captures/bugs/issue-123.json
+tracetap capture --raw-log captures/exploration/new-api.json
 ```
 
 ### Tip 5: Use Environment Variables
@@ -446,7 +375,7 @@ source .env.local
 
 tracetap capture \
   --port $TRACETAP_PORT \
-  --export $TRACETAP_OUTPUT_DIR/session.json
+  --raw-log $TRACETAP_OUTPUT_DIR/session.json
 ```
 
 ### Tip 6: Combine with Git
@@ -454,7 +383,7 @@ tracetap capture \
 ```bash
 # Capture before committing
 git add .
-tracetap capture --port 8080 --export pre-commit-api.json &
+tracetap capture --port 8080 --raw-log pre-commit-api.json &
 PID=$!
 npm test
 kill $PID
@@ -476,16 +405,7 @@ API Contract: contract.yaml"
 npm install -g nodemon
 
 nodemon --watch captures/ --ext json --exec \
-  "tracetap-playwright captures/latest.json --output tests/api.spec.ts"
-```
-
-### Tip 8: Quick Postman Import
-
-```bash
-# Generate and open in Postman in one command
-tracetap-ai-postman capture.json --output collection.json && \
-  open "https://www.postman.com/import" && \
-  echo "Import: $PWD/collection.json"
+  "tracetap-playwright captures/latest.json --ai-suggestions --output tests/api.spec.ts"
 ```
 
 ---
@@ -552,9 +472,9 @@ tracetap capture \
   --max-body-size 1000
 
 # Split by time
-tracetap capture --port 8080 --export part1.json
+tracetap capture --port 8080 --raw-log part1.json
 # Ctrl+C after 5 minutes
-tracetap capture --port 8080 --export part2.json
+tracetap capture --port 8080 --raw-log part2.json
 ```
 
 ### Issue 4: Port Already in Use
@@ -585,8 +505,7 @@ export HTTP_PROXY=http://localhost:8081
 
 **Solution:**
 ```bash
-# Increase timeout (if applicable in your app)
-# Or check request type
+# Check request type
 cat capture.json | jq '.requests[] | select(.response.body == null) | .url'
 ```
 
@@ -598,19 +517,13 @@ cat capture.json | jq '.requests[] | select(.response.body == null) | .url'
 
 ```bash
 # Start capture
-tracetap capture --port 8080 --export session.json
+tracetap capture --port 8080 --raw-log session.json
 
 # Verbose capture
 tracetap capture --port 8080 --verbose
 
-# Generate Postman
-tracetap-ai-postman capture.json --output collection.json --ai
-
-# Generate tests
-tracetap-playwright capture.json --output tests/
-
-# Start mock server
-tracetap-replay.py mock capture.json --port 8080
+# Generate tests with AI
+tracetap-playwright capture.json --ai-suggestions --output tests/
 
 # Create contract
 tracetap contract create capture.json --output contract.yaml

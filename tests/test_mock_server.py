@@ -6,7 +6,6 @@ Tests the FastAPI-based mock server including:
 - Request handling and matching
 - Response serving
 - Admin API endpoints
-- Chaos engineering features
 """
 
 import pytest
@@ -95,7 +94,6 @@ class TestMockConfig:
         assert config.matching_strategy == 'fuzzy'
         assert config.host == '127.0.0.1'
         assert config.port == 8080
-        assert config.chaos_enabled is False
         assert config.admin_enabled is True
 
     def test_custom_config(self):
@@ -104,16 +102,13 @@ class TestMockConfig:
             matching_strategy='exact',
             host='0.0.0.0',
             port=9090,
-            add_delay_ms=100,
-            chaos_enabled=True,
-            chaos_failure_rate=0.1
+            add_delay_ms=100
         )
 
         assert config.matching_strategy == 'exact'
         assert config.host == '0.0.0.0'
         assert config.port == 9090
         assert config.add_delay_ms == 100
-        assert config.chaos_failure_rate == 0.1
 
 
 class TestMockMetrics:
@@ -158,14 +153,12 @@ class TestMockServer:
     def test_server_with_custom_config(self, temp_log_file):
         """Test server with custom configuration."""
         config = MockConfig(
-            matching_strategy='exact',
-            chaos_enabled=True
+            matching_strategy='exact'
         )
 
         server = MockServer(temp_log_file, config=config)
 
         assert server.config.matching_strategy == 'exact'
-        assert server.config.chaos_enabled is True
 
     def test_load_captures_file_not_found(self):
         """Test loading captures from non-existent file."""
@@ -215,13 +208,11 @@ class TestMockServerEndpoints:
         client = TestClient(server.app)
 
         response = client.post('/__admin__/config', json={
-            'chaos_enabled': True,
-            'chaos_failure_rate': 0.2
+            'matching_strategy': 'exact'
         })
 
         assert response.status_code == 200
-        assert server.config.chaos_enabled is True
-        assert server.config.chaos_failure_rate == 0.2
+        assert server.config.matching_strategy == 'exact'
 
     def test_admin_captures_list(self, temp_log_file):
         """Test listing captures via admin API."""
@@ -298,51 +289,6 @@ class TestMockServerEndpoints:
         assert response.status_code == 404
 
 
-class TestMockServerChaos:
-    """Test chaos engineering features."""
-
-    def test_chaos_trigger_failure(self, temp_log_file):
-        """Test chaos engineering triggering failures."""
-        config = MockConfig(
-            chaos_enabled=True,
-            chaos_failure_rate=1.0  # Always fail
-        )
-        server = MockServer(temp_log_file, config=config)
-        client = TestClient(server.app)
-
-        response = client.get('/users/123')
-
-        # Should get chaos error
-        assert response.status_code == 500
-        data = response.json()
-        assert 'Chaos' in data['error'] or 'error' in data
-
-    def test_chaos_disabled(self, temp_log_file):
-        """Test chaos disabled."""
-        config = MockConfig(chaos_enabled=False)
-        server = MockServer(temp_log_file, config=config)
-        client = TestClient(server.app)
-
-        response = client.get('/users/123')
-
-        # Should get normal response
-        assert response.status_code == 200
-
-    @patch('src.tracetap.mock.server.asyncio.sleep', new_callable=AsyncMock)
-    def test_delay_applied(self, mock_sleep, temp_log_file):
-        """Test that delay is applied to responses."""
-        config = MockConfig(add_delay_ms=100)
-        server = MockServer(temp_log_file, config=config)
-        client = TestClient(server.app)
-
-        response = client.get('/users/123')
-
-        # Verify sleep was called with correct delay
-        mock_sleep.assert_called_once()
-        call_args = mock_sleep.call_args[0]
-        assert call_args[0] == 0.1  # 100ms = 0.1s
-
-
 class TestMockServerMetrics:
     """Test metrics tracking."""
 
@@ -372,13 +318,11 @@ class TestCreateMockServer:
         server = create_mock_server(
             temp_log_file,
             port=9090,
-            matching_strategy='exact',
-            chaos_enabled=True
+            matching_strategy='exact'
         )
 
         assert server.config.port == 9090
         assert server.config.matching_strategy == 'exact'
-        assert server.config.chaos_enabled is True
 
 
 class TestRequestRecording:

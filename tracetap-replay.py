@@ -81,15 +81,6 @@ def cmd_mock(args):
         print(f"   Must be 0 or positive")
         sys.exit(1)
 
-    # Validate chaos rate
-    if not (0 <= args.chaos_rate <= 1):
-        print(f"\n❌ Error: Invalid chaos failure rate")
-        print(f"   Rate: {args.chaos_rate}")
-        print(f"   Must be between 0 and 1 (0.1 = 10%)")
-        print(f"\nExample:")
-        print(f"  python3 tracetap-replay.py mock session.json --chaos --chaos-rate 0.2")
-        sys.exit(1)
-
     # Get API key from environment only (SECURITY: Never accept API keys via CLI)
     api_key = get_api_key_from_env()
 
@@ -129,8 +120,6 @@ def cmd_mock(args):
         port=args.port,
         matching_strategy=args.strategy,
         add_delay_ms=args.delay,
-        chaos_enabled=args.chaos,
-        chaos_failure_rate=args.chaos_rate,
         ai_enabled=args.ai if hasattr(args, 'ai') else False,
         ai_api_key=api_key,
         response_mode=args.response_mode if hasattr(args, 'response_mode') else 'static',
@@ -773,8 +762,6 @@ For more information: https://github.com/yourusername/tracetap
     mock_parser.add_argument('-s', '--strategy', choices=['exact', 'fuzzy', 'pattern', 'semantic'], default='fuzzy',
                            help='Matching strategy (default: fuzzy)')
     mock_parser.add_argument('--delay', type=int, default=0, help='Add fixed delay in ms (default: 0)')
-    mock_parser.add_argument('--chaos', action='store_true', help='Enable chaos engineering')
-    mock_parser.add_argument('--chaos-rate', type=float, default=0.1, help='Chaos failure rate (default: 0.1)')
     mock_parser.add_argument('--ai', action='store_true', help='Enable AI-powered features (semantic matching, intelligent responses). Requires ANTHROPIC_API_KEY env var')
     mock_parser.add_argument('--response-mode', choices=['static', 'template', 'transform', 'ai', 'intelligent'],
                            default='static', help='Response generation mode (default: static)')

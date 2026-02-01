@@ -85,7 +85,7 @@ We open-sourced TraceTap after a year of internal development. It started as a s
 - Flow inference engine that understands request sequences and dependencies
 - Schema inference to detect request/response structure
 - AI integration (we use Anthropic's Claude) for test gap analysis and suggestion generation
-- Multiple output formats (pytest, Postman, WireMock, OpenAPI)
+- Multiple output formats (pytest, Postman, OpenAPI)
 
 **Interesting technical challenges we solved:**
 
@@ -135,8 +135,8 @@ Would love feedback on approach, especially around:
 **If someone asks "Why not just use Postman?"**
 Response: Postman is great for manual testing and manual collection building. TraceTap is different—it's about capturing real workflows from production/staging, then automatically generating tests. You're not manually creating requests; you're capturing them. And then AI suggests additional tests you'd miss. The big win is when you have dozens of endpoints; Postman requires manual work for each one.
 
-**If someone asks "Doesn't Wiremock already solve this?"**
-Response: WireMock is excellent for mocking. TraceTap uses WireMock as one output format (you can generate WireMock stubs from captures). But TraceTap does more: it generates executable tests, Postman collections, contracts, and uses AI to suggest edge cases. Think of it as complementary.
+**If someone asks about mock servers:**
+Response: TraceTap can generate mock servers from captured traffic. This allows you to test your API integrations without hitting the real API. Think of it as capturing real behavior and replaying it for testing.
 
 **If someone asks "How's this different from OpenAPI/Swagger?"**
 Response: OpenAPI is about specification. TraceTap generates OpenAPI specs from real traffic, but it's primarily a test generation tool. We also generate tests, mocks, and contract specs automatically.

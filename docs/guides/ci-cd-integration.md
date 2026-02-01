@@ -477,9 +477,6 @@ python tracetap-playwright.py staging-capture.json \
   -o tests/staging-generated/
 
 # 3. Run generated tests against local mock
-python tracetap2wiremock.py staging-capture.json \
-  -o wiremock/mappings/staging.json
-
 pytest tests/staging-generated/
 ```
 

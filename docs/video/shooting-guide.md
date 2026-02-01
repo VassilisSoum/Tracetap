@@ -434,7 +434,8 @@ Prepare the captured.json file from previous step.
 
 2. **Run AI generation:**
    ```bash
-   tracetap-ai-postman.py captured.json -o postman-collection.json
+   export ANTHROPIC_API_KEY='your-api-key'
+   python -m tracetap.ai.suggest captured.json
    ```
    (or use appropriate command based on your setup)
 
@@ -463,11 +464,6 @@ Prepare the captured.json file from previous step.
    - Scroll through showing test functions
    - Highlight test count: "47 tests generated"
 
-6. **Optional:** Generate WireMock stubs
-   ```bash
-   tracetap2wiremock.py captured.json -o wiremock-stubs.json
-   ```
-
 **Timing Notes:**
 - Let each command run to completion
 - Don't cut off the output
@@ -487,7 +483,6 @@ Prepare the captured.json file from previous step.
    ```
    -rw-r--r-- 1 user staff 15K Jan 1 14:32 captured.json
    -rw-r--r-- 1 user staff 12K Jan 1 14:33 postman-collection.json
-   -rw-r--r-- 1 user staff  8K Jan 1 14:33 wiremock-stubs.json
    -rw-r--r-- 1 user staff  5K Jan 1 14:33 contract.yaml
 
    tests/:
@@ -942,22 +937,20 @@ python tracetap.py --listen 8080 --export captured.json
 # Command 2: Make API calls (from separate terminal)
 ./demo-api-calls.sh
 
-# Command 3: Generate Postman collection
-tracetap-ai-postman.py captured.json -o postman-collection.json
+# Command 3: Generate AI test suggestions
+export ANTHROPIC_API_KEY='your-api-key'
+python -m tracetap.ai.suggest captured.json
 
 # Command 4: Generate Playwright tests
 tracetap-playwright.py captured.json -o tests/
 
-# Command 5: Generate WireMock stubs
-tracetap2wiremock.py captured.json -o wiremock-stubs.json
-
-# Command 6: Generate OpenAPI spec
+# Command 5: Generate OpenAPI spec
 tracetap-export-openapi.py captured.json -o openapi.yaml
 
-# Command 7: Verify contract
+# Command 6: Verify contract
 tracetap-verify-contract.py captured.json --contract user-service-contract.yaml
 
-# Command 8: Show files generated
+# Command 7: Show files generated
 ls -lh *.json tests/
 ```
 
@@ -1427,7 +1420,7 @@ ffmpeg -i input.mov \
    ✓ One-command proxy setup
    ✓ Real-time traffic capture
    ✓ AI-powered test generation (47 tests in 60 seconds)
-   ✓ Multiple export formats (Postman, Pytest, WireMock)
+   ✓ Multiple export formats (Postman, Pytest)
    ✓ Contract testing for microservices
    ✓ Auto-generated API documentation
 
@@ -1510,7 +1503,7 @@ analysis. Generate complete test suites instantly.
 
 Key capabilities shown:
 - HTTP/HTTPS traffic interception
-- Multi-format export (Postman, Pytest, WireMock)
+- Multi-format export (Playwright tests, JSON captures)
 - AI-driven test suggestions
 - Contract testing for microservices
 - Auto-generated documentation
@@ -1607,7 +1600,8 @@ SCENE 2c: Make Requests (0:30)
    [Watch requests appear in proxy terminal]
 
 SCENE 2d: Generate Tests (0:20)
-   $ tracetap-ai-postman.py captured.json -o postman.json
+   $ export ANTHROPIC_API_KEY='your-api-key'
+   $ python -m tracetap.ai.suggest captured.json
    $ tracetap-playwright.py captured.json -o tests/
 
 SCENE 2e: Show Files (0:20)

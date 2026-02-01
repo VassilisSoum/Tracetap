@@ -9,7 +9,6 @@
     "api",
     "testing",
     "postman",
-    "wiremock",
     "playwright",
     "mitmproxy",
     "ai",
@@ -30,10 +29,8 @@
   "bin": {
     "tracetap": "./bin/tracetap.js",
     "tracetap-quickstart": "./bin/tracetap-quickstart.js",
-    "tracetap-ai-postman": "./bin/tracetap-ai-postman.js",
     "tracetap-replay": "./bin/tracetap-replay.js",
-    "tracetap-playwright": "./bin/tracetap-playwright.js",
-    "tracetap2wiremock": "./bin/tracetap2wiremock.js"
+    "tracetap-playwright": "./bin/tracetap-playwright.js"
   },
   "scripts": {
     "postinstall": "node scripts/install.js",

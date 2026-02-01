@@ -1,15 +1,14 @@
 # REST API Regression Suite with TraceTap
 
-This example demonstrates how to build a complete regression test suite for a REST API using TraceTap's automated test generation capabilities.
+This example demonstrates how to build a complete regression test suite for a REST API using TraceTap's traffic capture and AI-powered test generation.
 
 ## Overview
 
 In this example, you will:
 1. Capture full CRUD operations from an API
-2. Generate comprehensive Playwright regression tests
-3. Configure assertion levels (status codes, schemas, data)
+2. Export traffic as JSON for AI analysis
+3. Use Claude AI to generate comprehensive Playwright regression tests
 4. Set up an automated CI/CD testing workflow
-5. See before/after comparison of API changes
 
 ## Prerequisites
 
@@ -30,60 +29,75 @@ regression-suite/
 ├── captured-traffic/
 │   └── crud-operations.json    # Captured CRUD traffic
 ├── generated-tests/
-│   ├── api-regression.spec.ts  # Generated regression tests
+│   ├── api-regression.spec.ts  # AI-generated regression tests
 │   └── playwright.config.ts    # Playwright configuration
-├── baseline/
-│   └── api-baseline.json       # Baseline responses for comparison
-├── scripts/
-│   └── run-tests.sh           # Test runner script
 └── ci-cd/
     └── github-actions.yml     # GitHub Actions workflow
 ```
 
 ## Quick Start
 
-### Step 1: Examine the Captured Traffic
+### Step 1: Capture API Traffic
 
-The `captured-traffic/crud-operations.json` contains a complete CRUD workflow:
-
-```bash
-cat captured-traffic/crud-operations.json | python3 -m json.tool | head -50
-```
-
-The traffic includes:
-- **CREATE**: POST /users - Create new user
-- **READ**: GET /users, GET /users/{id} - List and fetch users
-- **UPDATE**: PUT /users/{id} - Update user data
-- **DELETE**: DELETE /users/{id} - Remove user
-
-### Step 2: Generate Regression Tests
-
-Generate Playwright tests from the captured traffic:
+Start TraceTap to capture your API's CRUD operations:
 
 ```bash
-# From project root
-python tracetap-replay.py generate-regression \
-    examples/regression-suite/captured-traffic/crud-operations.json \
-    -o examples/regression-suite/generated-tests/api-regression.spec.ts \
-    --grouping endpoint \
-    --base-url http://localhost:3000 \
-    --assert-types status,schema,data \
-    --critical-fields id,email,status
+tracetap capture --port 8080 \
+    --output captured-traffic/crud-operations.json \
+    --filter-host "localhost:3000"
 ```
 
-**Options explained:**
-- `--grouping endpoint` - Group tests by API endpoint
-- `--assert-types status,schema,data` - Generate all assertion types
-- `--critical-fields` - Fields that must always match
+Then exercise your API through the proxy:
+
+```bash
+export HTTP_PROXY=http://localhost:8080
+
+# CREATE
+curl -X POST http://localhost:3000/users \
+    -H "Content-Type: application/json" \
+    -d '{"name": "John", "email": "john@example.com"}'
+
+# READ
+curl http://localhost:3000/users
+curl http://localhost:3000/users/1
+
+# UPDATE
+curl -X PUT http://localhost:3000/users/1 \
+    -H "Content-Type: application/json" \
+    -d '{"name": "John Doe", "email": "john.doe@example.com"}'
+
+# DELETE
+curl -X DELETE http://localhost:3000/users/1
+```
+
+Press `Ctrl+C` to stop capture and export.
+
+### Step 2: Generate Tests with Claude AI
+
+Use the captured JSON with Claude to generate comprehensive regression tests:
+
+```bash
+# Use Claude CLI
+claude "Generate comprehensive Playwright regression tests from this API traffic: $(cat captured-traffic/crud-operations.json)"
+```
+
+Or use Claude Code:
+
+```
+@crud-operations.json Generate a complete Playwright regression test suite for
+this REST API. Include:
+- Individual CRUD operation tests
+- Full workflow test (create -> read -> update -> delete)
+- Schema validation for all responses
+- Error scenario tests
+- Assertions for critical fields: id, email, status
+```
 
 ### Step 3: Run the Tests
 
 ```bash
-# Install dependencies
-cd examples/regression-suite/generated-tests
+cd generated-tests
 npm install
-
-# Run tests
 npx playwright test
 ```
 
@@ -115,89 +129,93 @@ The CRUD operations JSON structure:
 }
 ```
 
-## Generated Test Structure
+## AI-Generated Test Structure
 
-The generated tests include:
+When you provide captured traffic to Claude, it generates tests with multiple assertion types:
 
-### 1. Status Code Assertions
+### Status Code Assertions
 ```typescript
 expect(response.status()).toBe(200);
 ```
 
-### 2. Schema Assertions
+### Schema Assertions
 ```typescript
 expect(user).toHaveProperty('id');
 expect(user).toHaveProperty('name');
 expect(user).toHaveProperty('email');
 ```
 
-### 3. Data Type Assertions
+### Data Type Assertions
 ```typescript
 expect(typeof user.id).toBe('number');
 expect(typeof user.name).toBe('string');
 ```
 
-### 4. Value Assertions
+### Value Assertions
 ```typescript
 expect(user.email).toMatch(/.*@.*\..*/);
 expect(user.status).toBe('active');
 ```
 
-### 5. Flow Tests
+### Complete Workflow Test
 ```typescript
 test('Complete CRUD workflow', async ({ request }) => {
   // CREATE
-  const createResponse = await request.post('/users', {...});
+  const createResponse = await request.post('/users', {
+    data: { name: 'Test User', email: 'test@example.com' }
+  });
+  expect(createResponse.status()).toBe(201);
   const user = await createResponse.json();
+  expect(user.id).toBeDefined();
 
   // READ
   const getResponse = await request.get(`/users/${user.id}`);
+  expect(getResponse.status()).toBe(200);
+  const fetchedUser = await getResponse.json();
+  expect(fetchedUser.email).toBe('test@example.com');
 
   // UPDATE
-  const updateResponse = await request.put(`/users/${user.id}`, {...});
+  const updateResponse = await request.put(`/users/${user.id}`, {
+    data: { name: 'Updated User' }
+  });
+  expect(updateResponse.status()).toBe(200);
 
   // DELETE
   const deleteResponse = await request.delete(`/users/${user.id}`);
+  expect(deleteResponse.status()).toBe(204);
+
+  // VERIFY DELETION
+  const verifyResponse = await request.get(`/users/${user.id}`);
+  expect(verifyResponse.status()).toBe(404);
 });
 ```
 
-## Assertion Levels
+## Claude AI Prompts for Regression Tests
 
-TraceTap supports multiple assertion levels:
-
-| Level | What it checks | Use case |
-|-------|---------------|----------|
-| `status` | HTTP status codes only | Basic smoke tests |
-| `schema` | Response structure | API contract validation |
-| `data` | Actual values | Critical field verification |
-| `performance` | Response times | SLA validation |
-
-Example configuration:
-
-```bash
-# Minimal assertions
-python tracetap-replay.py generate-regression traffic.json -o tests.ts \
-    --assert-types status
-
-# Full validation
-python tracetap-replay.py generate-regression traffic.json -o tests.ts \
-    --assert-types status,schema,data \
-    --critical-fields id,email,created_at
+### Basic Regression Suite
+```
+Generate Playwright regression tests from this API traffic.
+Group tests by endpoint and include status code assertions.
 ```
 
-## Baseline Comparison
+### Comprehensive Regression Suite
+```
+Generate a comprehensive Playwright regression test suite:
+1. Individual tests for each captured endpoint
+2. CRUD workflow tests that chain operations
+3. Schema validation (check all response fields exist)
+4. Data type validation
+5. Critical field assertions for: id, email, created_at
+6. Error handling tests (404, 400, 500 scenarios)
+```
 
-Track API changes by comparing against a baseline:
-
-```bash
-# Create baseline
-cp captured-traffic/crud-operations.json baseline/api-baseline.json
-
-# After API changes, capture new traffic
-python tracetap.py --listen 8080 --raw-log captured-traffic/new-traffic.json
-
-# Compare
-diff baseline/api-baseline.json captured-traffic/new-traffic.json
+### Breaking Change Detection
+```
+Generate regression tests focused on detecting breaking changes:
+- Field presence checks (will fail if fields are removed)
+- Field type checks (will fail if types change)
+- Status code verification
+- Response structure validation
 ```
 
 ## CI/CD Integration
@@ -226,14 +244,6 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install TraceTap
-        run: pip install -e .
-
       - name: Install Playwright
         run: |
           cd examples/regression-suite/generated-tests
@@ -258,25 +268,7 @@ jobs:
           path: examples/regression-suite/generated-tests/playwright-report/
 ```
 
-## Advanced Usage
-
-### Custom Assertions
-
-Add custom assertions by extending the generated tests:
-
-```typescript
-// Add after generated assertions
-test('Custom business logic validation', async ({ request }) => {
-  const response = await request.get('/users');
-  const users = await response.json();
-
-  // Custom assertion: at least one admin user exists
-  const admins = users.filter(u => u.role === 'admin');
-  expect(admins.length).toBeGreaterThan(0);
-});
-```
-
-### Environment-Specific Testing
+## Environment-Specific Testing
 
 ```typescript
 // playwright.config.ts
@@ -296,17 +288,7 @@ API_URL=https://staging.api.example.com npx playwright test
 API_URL=https://prod.api.example.com npx playwright test
 ```
 
-### Parallel Test Execution
-
-```typescript
-// playwright.config.ts
-export default defineConfig({
-  fullyParallel: true,
-  workers: 4,
-});
-```
-
-## Before/After: API Change Detection
+## Detecting API Breaking Changes
 
 ### Scenario: Field Name Change
 
@@ -329,28 +311,33 @@ Received object: {"name": "John"}
 
 This catches breaking changes before deployment.
 
+## Regenerating Tests After API Changes
+
+When your API changes intentionally:
+
+```bash
+# 1. Re-capture traffic with new API
+tracetap capture --port 8080 --output new-traffic.json
+
+# 2. Regenerate tests with Claude
+claude "Generate updated regression tests from: $(cat new-traffic.json)"
+
+# 3. Review and commit new tests
+```
+
 ## Troubleshooting
 
 ### Tests failing after API update
 
 1. Check if changes are intentional
 2. Re-capture traffic for new API version
-3. Regenerate tests
-
-```bash
-# Re-capture
-python tracetap.py --listen 8080 --raw-log new-traffic.json
-
-# Regenerate
-python tracetap-replay.py generate-regression new-traffic.json -o tests.ts
-```
+3. Regenerate tests with Claude
 
 ### Flaky tests
 
-Add retry logic:
+Add retry logic in playwright.config.ts:
 
 ```typescript
-// playwright.config.ts
 export default defineConfig({
   retries: 2,
 });
@@ -367,5 +354,4 @@ test.setTimeout(30000);
 ## Next Steps
 
 - Explore the [E-commerce Example](../ecommerce-api/) for workflow testing
-- See [Contract Testing Example](../contract-testing/) for API contract validation
 - Read the main [TraceTap documentation](../../README.md)

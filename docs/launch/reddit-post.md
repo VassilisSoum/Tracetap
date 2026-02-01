@@ -91,7 +91,7 @@ Bonus: The same contract serves as **living API documentation**—always accurat
 ## Key Features
 
 - **Traffic Capture** - HTTP/HTTPS proxy captures all API traffic transparently
-- **Multiple Formats** - Export to Postman, OpenAPI, pytest, Playwright, WireMock
+- **Multiple Formats** - Export to Postman, OpenAPI, pytest, Playwright
 - **AI Intelligence** - Auto-extracts variables, infers request flows, suggests improvements
 - **Traffic Replay** - Replay captured requests to different environments
 - **Mock Servers** - Run offline mock APIs for development/testing
@@ -168,7 +168,6 @@ You capture real traffic from your API (or any API you integrate with). TraceTap
 - ✅ Executable test suites (pytest, Playwright)
 - ✅ Postman collections (import and run immediately)
 - ✅ Mock servers (offline development/testing)
-- ✅ WireMock stubs (for integration testing)
 - ✅ Contract specs (for microservice validation)
 - ✅ API documentation (OpenAPI, Swagger)
 
@@ -183,9 +182,8 @@ One team measured their workflow:
 |------|------|
 | Write 50 test cases manually | 2 hours |
 | Create Postman collection | 1 hour |
-| Generate WireMock stubs | 1.5 hours |
 | Document API contracts | 2 hours |
-| **Total** | **8.5 hours** |
+| **Total** | **5 hours** |
 
 **After TraceTap:**
 | Task | Time |
@@ -194,7 +192,7 @@ One team measured their workflow:
 | Generate all artifacts | 2 minutes |
 | **Total** | **7 minutes** |
 
-That's a 98% reduction in busywork time. Imagine what your team could accomplish with those 8+ hours back.
+That's a 97% reduction in busywork time. Imagine what your team could accomplish with those 5+ hours back.
 
 ## Three Core Capabilities
 
@@ -237,8 +235,8 @@ python tracetap.py --listen 8080 --export api.json
 
 # Generate tests (2 minutes)
 python tracetap-playwright.py api.json -o tests/
-python tracetap-ai-postman.py api.json -o postman.json
-python tracetap2wiremock.py api.json -o stubs.json
+export ANTHROPIC_API_KEY='your-api-key'
+python -m tracetap.ai.suggest api.json
 
 # Run tests
 pytest tests/

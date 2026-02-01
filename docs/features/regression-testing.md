@@ -20,7 +20,7 @@ Automatically detect API breaking changes and regressions before they reach prod
 Regression testing catches bugs that appear in new versions of software. TraceTap makes this easy by:
 
 1. **Capturing baseline traffic** from your working API
-2. **Generating assertion-based tests** that verify behavior
+2. **Using AI to generate assertion-based tests** that verify behavior
 3. **Running tests against new versions** to catch breaking changes
 4. **Reporting differences** between versions
 
@@ -48,7 +48,7 @@ Version 2 of your API (with bug):
 ```bash
 GET /api/users/123
 200 OK
-{"id": 123, "name": "Alice"}  # ❌ email field missing!
+{"id": 123, "name": "Alice"}  # email field missing!
 ```
 
 A regression test catches this immediately.
@@ -60,38 +60,27 @@ A regression test catches this immediately.
 ### The Regression Testing Pipeline
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│ 1. Capture Baseline Traffic from Working API           │
-│    python tracetap.py --listen 8080 --export api.json  │
-└──────────────────┬──────────────────────────────────────┘
-                   │
-                   ▼
-┌─────────────────────────────────────────────────────────┐
-│ 2. Generate Regression Tests from Captures             │
-│    python tracetap-playwright.py api.json -o tests/    │
-└──────────────────┬──────────────────────────────────────┘
-                   │
-                   ▼
-┌─────────────────────────────────────────────────────────┐
-│ 3. Version Your Baseline                               │
-│    git add tests/api_regression_tests.py                │
-│    git commit -m "Baseline regression tests"            │
-└──────────────────┬──────────────────────────────────────┘
-                   │
-                   ▼
-┌─────────────────────────────────────────────────────────┐
-│ 4. Run Tests on New Versions                           │
-│    pytest tests/api_regression_tests.py                 │
-│    (Run in CI/CD on every deployment)                   │
-└─────────────────────────────────────────────────────────┘
+1. Capture Baseline Traffic from Working API
+   python tracetap.py --listen 8080 --raw-log api.json
+
+2. Use AI to Generate Regression Tests from Captures
+   python tracetap-playwright.py api.json --ai-suggestions -o tests/
+
+3. Version Your Baseline
+   git add tests/api_regression_tests.py
+   git commit -m "Baseline regression tests"
+
+4. Run Tests on New Versions
+   pytest tests/api_regression_tests.py
+   (Run in CI/CD on every deployment)
 ```
 
 Each test includes assertions on:
-- ✅ Status codes
-- ✅ Response headers
-- ✅ Response body structure
-- ✅ Response timing
-- ✅ Required fields
+- Status codes
+- Response headers
+- Response body structure
+- Response timing
+- Required fields
 
 ---
 
@@ -103,7 +92,7 @@ Capture traffic from your working API version:
 
 ```bash
 # Start TraceTap
-python tracetap.py --listen 8080 --export baseline.json
+python tracetap.py --listen 8080 --raw-log baseline.json
 
 # In another terminal, exercise your API
 export HTTP_PROXY=http://localhost:8080
@@ -122,14 +111,16 @@ Result: `baseline.json` contains captured requests and responses.
 
 ### Step 2: Generate Regression Tests
 
-Generate Playwright tests with automatic assertions:
+Generate Playwright tests with AI-powered analysis:
 
 ```bash
-# Generate tests
-python tracetap-playwright.py baseline.json -o tests/
+# Generate tests with AI suggestions
+python tracetap-playwright.py baseline.json \
+  --ai-suggestions \
+  -o tests/
 
 # View generated tests
-cat tests/api_regression_tests.py
+cat tests/test_api_calls.py
 ```
 
 Generated test file includes:
@@ -155,7 +146,7 @@ def test_get_users():
     for user in data:
         assert 'id' in user, "Missing 'id' field"
         assert 'name' in user, "Missing 'name' field"
-        assert 'email' in user, "Missing 'email' field"  # ← Catches missing fields!
+        assert 'email' in user, "Missing 'email' field"  # Catches missing fields!
 ```
 
 ### Step 3: Run Tests Against New Version
@@ -167,7 +158,7 @@ pytest tests/ -v
 # Deploy new version, run again
 pytest tests/ -v
 
-# ❌ If regression detected:
+# If regression detected:
 # FAILED test_get_users - AssertionError: Missing 'email' field
 ```
 
@@ -175,36 +166,22 @@ pytest tests/ -v
 
 ## Generate Regression Tests
 
-### Using Playwright Generator
+### Using AI-Powered Generation
 
-The Playwright generator creates comprehensive test files:
+Generate comprehensive tests with AI analysis:
 
 ```bash
 python tracetap-playwright.py baseline.json \
-  --output tests/ \
-  --class-name APIRegressionTests \
-  --include-assertions
+  --ai-suggestions \
+  --focus-areas edge_cases error_handling \
+  --output tests/
 ```
 
-### Using WireMock Stubs
-
-Create WireMock stubs for contract verification:
-
-```bash
-python tracetap2wiremock.py baseline.json \
-  --output wiremock-stubs.json \
-  --priority 100
-```
-
-### Using Postman Collection
-
-Generate a Postman collection with tests:
-
-```bash
-python tracetap-ai-postman.py baseline.json \
-  --output postman-regression.json \
-  --infer-flow
-```
+The AI will:
+- Analyze your API patterns
+- Identify critical assertions
+- Suggest edge case tests
+- Add error handling scenarios
 
 ---
 
@@ -217,7 +194,7 @@ python tracetap-ai-postman.py baseline.json \
 pytest tests/ -v
 
 # Run specific test
-pytest tests/api_regression_tests.py::test_get_users -v
+pytest tests/test_api_calls.py::test_get_users -v
 
 # Show detailed output
 pytest tests/ -vv --tb=short
@@ -313,7 +290,7 @@ jobs:
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: '❌ API regression tests failed. See artifacts for details.'
+              body: 'API regression tests failed. See artifacts for details.'
             })
 ```
 
@@ -423,10 +400,10 @@ def test_all_endpoints_responsive():
 
 ### 1. Capture Representative Traffic
 
-- ✅ Include happy path workflows
-- ✅ Include error cases (invalid IDs, missing fields)
-- ✅ Include edge cases (empty results, large payloads)
-- ❌ Avoid including production data (PII)
+- Include happy path workflows
+- Include error cases (invalid IDs, missing fields)
+- Include edge cases (empty results, large payloads)
+- Avoid including production data (PII)
 
 ```bash
 # Good: Mix of success and error cases
@@ -441,10 +418,10 @@ curl -X POST https://api.example.com/users \
 
 ```bash
 # Use date-based naming
-python tracetap.py --listen 8080 --export baseline-2024-02-01.json
+python tracetap.py --listen 8080 --raw-log baseline-2024-02-01.json
 
 # Or version-based
-python tracetap.py --listen 8080 --export baseline-v2.1.0.json
+python tracetap.py --listen 8080 --raw-log baseline-v2.1.0.json
 
 # Commit to version control
 git add baseline-*.json
@@ -457,10 +434,12 @@ When you intentionally change your API:
 
 ```bash
 # Capture new baseline
-python tracetap.py --listen 8080 --export baseline-v2.2.0.json
+python tracetap.py --listen 8080 --raw-log baseline-v2.2.0.json
 
 # Regenerate tests
-python tracetap-playwright.py baseline-v2.2.0.json -o tests/
+python tracetap-playwright.py baseline-v2.2.0.json \
+  --ai-suggestions \
+  -o tests/
 
 # Update CI/CD to use new baseline
 git add tests/ baseline-v2.2.0.json
@@ -505,28 +484,6 @@ def test_get_user():
 
     # Skip dynamic fields
     assert 'session_id' in data  # Just check presence
-```
-
-### 6. Document Test Expectations
-
-Add comments explaining what each test validates:
-
-```python
-def test_post_user():
-    """
-    Test user creation endpoint.
-
-    This test validates:
-    - POST /users accepts name, email
-    - Returns 201 Created
-    - Response includes auto-generated id
-    - Response includes created_at timestamp
-
-    Note: Only captures one successful scenario.
-    Error cases (validation errors, duplicates) not tested here.
-    """
-    response = requests.post(...)
-    # ...
 ```
 
 ---

@@ -43,8 +43,7 @@ WORKDIR /app
 
 # Copy application code
 COPY src/ ./src/
-COPY tracetap.py tracetap-ai-postman.py tracetap-replay.py \
-     tracetap-playwright.py tracetap2wiremock.py tracetap-update-collection.py ./
+COPY tracetap.py tracetap-replay.py tracetap-playwright.py ./
 COPY pyproject.toml README.md LICENSE ./
 
 # Create directory for captures

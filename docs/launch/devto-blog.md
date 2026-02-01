@@ -30,7 +30,6 @@ I'm not talking about running tests or debugging failures—I'm talking about th
 - Documenting API requests in Postman collections
 - Writing test cases in Pytest or another framework
 - Creating mock servers for offline development
-- Generating WireMock stubs
 - Writing contract specifications for microservices
 - Manually updating API documentation
 
@@ -40,9 +39,8 @@ One team we worked with measured their workflow:
 
 - Writing 50 test cases manually: **2 hours**
 - Creating a Postman collection: **1 hour**
-- Generating WireMock stubs: **1.5 hours**
 - Documenting API contracts: **2 hours**
-- **Total: 8.5 hours per API**
+- **Total: 5 hours per API**
 
 And they're not unusual. This is the reality for most teams.
 
@@ -68,9 +66,9 @@ One team measured the same workflow with TraceTap:
 - Generate all artifacts: **2 minutes**
 - **Total: 7 minutes**
 
-**That's a 98% time reduction. From 8.5 hours to 7 minutes.**
+**That's a 97% time reduction. From 5 hours to 7 minutes.**
 
-Imagine what your team could accomplish with those 8+ hours back per API.
+Imagine what your team could accomplish with those 5+ hours back per API.
 
 ---
 
@@ -310,11 +308,9 @@ Now generate your tests:
 # Option A: Generate Playwright/pytest tests
 python tracetap-playwright.py captured.json -o tests/
 
-# Option B: Generate Postman collection
-python tracetap-ai-postman.py captured.json -o postman-collection.json
-
-# Option C: Generate WireMock stubs
-python tracetap2wiremock.py captured.json -o wiremock-stubs.json
+# Option B: Use AI to analyze and suggest tests
+export ANTHROPIC_API_KEY='your-api-key'
+python -m tracetap.ai.suggest captured.json
 ```
 
 #### Step 5: Run Your Tests
@@ -358,13 +354,10 @@ python tracetap.py --listen 8080 \
   --filter-host api.stripe.com \
   --export stripe-traffic.json
 
-# 2. Generate WireMock stubs
-python tracetap2wiremock.py stripe-traffic.json -o stubs.json
-
-# 3. Run offline mock server
+# 2. Run offline mock server
 python tracetap-replay mock stripe-traffic.json --port 9000
 
-# 4. Test your Stripe integration without hitting real API
+# 3. Test your Stripe integration without hitting real API
 # (No rate limits, no API costs, no network dependency)
 ```
 
@@ -388,7 +381,7 @@ python tracetap-contract verify contract.yaml \
 
 - **HTTP/HTTPS Proxy** - Transparently capture all API traffic
 - **Smart Filtering** - Capture specific hosts or regex patterns
-- **Multiple Output Formats** - Postman, OpenAPI, Pytest, Playwright, WireMock
+- **Multiple Output Formats** - Postman, OpenAPI, Pytest, Playwright
 - **AI Intelligence** - Auto-extract variables, infer flows, suggest tests
 - **Traffic Replay** - Replay captures to different environments
 - **Mock Servers** - Run offline mock APIs
@@ -403,7 +396,6 @@ python tracetap-contract verify contract.yaml \
 As the testing community, we've been solving the same problems manually for years:
 
 - Writing test cases by hand
-- Creating mock servers manually
 - Documenting APIs manually
 - Updating contracts manually
 
@@ -488,5 +480,5 @@ The project is open source and we welcome contributors, especially if you're int
 - **Real-world workflows** - Shows practical applications
 - **Authentic voice** - Feels like engineers talking to engineers
 - **Clear next steps** - Links to docs, GitHub, ways to contribute
-- **Addresses misconceptions** - "Better than Postman/WireMock/etc."
+- **Addresses misconceptions** - "Better than Postman/etc."
 - **Shows roadmap** - Demonstrates ongoing development

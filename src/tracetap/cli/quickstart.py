@@ -346,14 +346,10 @@ class QuickstartGuide:
         success_panel = Panel(
             f"[bold green]🎉 Success! You've captured {num_requests} requests from {num_endpoints} endpoints![/bold green]\n\n"
             "[bold white]What you can do now:[/bold white]\n\n"
-            f"1. Generate Postman collection:\n"
-            f"   [cyan]tracetap-ai-postman {self.output_file} -o collection.json[/cyan]\n\n"
-            f"2. Generate Playwright tests:\n"
-            f"   [cyan]tracetap-playwright collection.json -o tests.spec.ts[/cyan]\n\n"
-            f"3. Create WireMock stubs:\n"
-            f"   [cyan]tracetap2wiremock {self.output_file} -o mocks/[/cyan]\n\n"
-            f"4. Replay traffic to staging:\n"
-            f"   [cyan]tracetap-replay {self.output_file} --target https://staging.api.com[/cyan]\n\n"
+            f"1. Generate Playwright tests:\n"
+            f"   [cyan]tracetap-playwright {self.output_file} -o tests.spec.ts[/cyan]\n\n"
+            f"2. Let Claude AI analyze and transform your traffic:\n"
+            f"   [cyan]# Use Claude to generate tests, contracts, or mock data[/cyan]\n\n"
             "[bold]Learn more:[/bold] [link=https://github.com/VassilisSoum/tracetap]https://github.com/VassilisSoum/tracetap[/link]",
             title="Next Steps",
             border_style="green",

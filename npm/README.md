@@ -25,9 +25,6 @@ npx tracetap-quickstart
 # Capture traffic
 npx tracetap --listen 8080 --export collection.json
 
-# Generate AI-enhanced Postman collection
-npx tracetap-ai-postman capture.json -o collection.json
-
 # Generate Playwright tests
 npx tracetap-playwright collection.json -o tests.spec.ts
 
@@ -43,7 +40,6 @@ npx tracetap-replay capture.json --target https://staging.example.com
 TraceTap is a comprehensive HTTP/HTTPS traffic capture proxy that:
 
 - 📡 Captures API traffic in real-time
-- 🤖 Generates Postman collections with AI
 - 🎭 Creates Playwright test suites
 - 🎪 Runs intelligent mock servers
 - 🔄 Replays traffic to different environments
@@ -63,10 +59,8 @@ After installation, these commands are available:
 |---------|-------------|
 | `tracetap` | Main capture proxy |
 | `tracetap-quickstart` | Interactive onboarding (start here!) |
-| `tracetap-ai-postman` | AI-powered Postman collection generator |
 | `tracetap-replay` | Replay & mock server |
 | `tracetap-playwright` | Playwright test generator |
-| `tracetap2wiremock` | WireMock stub generator |
 
 ## Requirements
 
@@ -95,11 +89,8 @@ npx tracetap --listen 8080 --raw-log capture.json
 ### Generate Tests from Traffic
 
 ```bash
-# Generate Postman collection with AI
-npx tracetap-ai-postman capture.json -o collection.json
-
-# Generate Playwright tests
-npx tracetap-playwright collection.json -o tests/api.spec.ts
+# Generate Playwright tests from capture
+npx tracetap-playwright capture.json -o tests/api.spec.ts
 
 # Run the tests
 npx playwright test tests/api.spec.ts

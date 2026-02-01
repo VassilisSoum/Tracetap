@@ -42,7 +42,6 @@ class Tracetap < Formula
     assert_match version.to_s, shell_output("#{bin}/tracetap --version")
 
     # Test other CLI commands are available
-    assert_match "AI-powered", shell_output("#{bin}/tracetap-ai-postman --help")
     assert_match "replay", shell_output("#{bin}/tracetap-replay --help")
     assert_match "Playwright", shell_output("#{bin}/tracetap-playwright --help")
   end

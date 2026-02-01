@@ -7,7 +7,6 @@ This module provides:
 - FastAPI-based mock server
 - Request matching engine
 - AI-powered response generation
-- Chaos engineering features
 """
 
 from .server import MockServer, MockConfig, MockMetrics, create_mock_server

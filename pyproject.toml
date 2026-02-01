@@ -26,7 +26,7 @@ classifiers = [
     "Topic :: Internet :: Proxy Servers",
     "Topic :: Software Development :: Quality Assurance",
 ]
-keywords = ["proxy", "http", "api", "testing", "postman", "wiremock", "playwright", "mitmproxy", "ai"]
+keywords = ["proxy", "http", "api", "testing", "postman", "playwright", "mitmproxy", "ai"]
 
 dependencies = [
     "mitmproxy>=8.0.0,<9.0.0",
@@ -38,13 +38,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-replay = [
-    "requests>=2.31.0",
-    "fastapi>=0.104.0",
-    "uvicorn[standard]>=0.24.0",
-    "jsonpath-ng>=1.6.0",
-    "faker>=20.0.0",
-]
 dev = [
     "pytest>=7.4.0",
     "pytest-asyncio>=0.21.0",
@@ -58,7 +51,7 @@ dev = [
     "types-requests",
 ]
 all = [
-    "tracetap[replay,dev]",
+    "tracetap[dev]",
 ]
 
 [project.urls]
@@ -70,11 +63,7 @@ Documentation = "https://github.com/VassilisSoum/tracetap#readme"
 [project.scripts]
 tracetap = "tracetap:main"
 tracetap-quickstart = "tracetap.cli.quickstart:main"
-tracetap-ai-postman = "tracetap_ai_postman:main"
-tracetap-replay = "tracetap_replay:main"
 tracetap-playwright = "tracetap_playwright:main"
-tracetap2wiremock = "tracetap2wiremock:main"
-tracetap-update-collection = "tracetap_update_collection:main"
 
 [tool.setuptools]
 packages = ["src.tracetap"]

@@ -1,15 +1,14 @@
 # E-commerce API Testing with TraceTap
 
-This example demonstrates how to use TraceTap to capture, document, and test an e-commerce API including checkout flows, product catalog, and order management.
+This example demonstrates how to use TraceTap to capture e-commerce API traffic and generate AI-powered tests for checkout flows, product catalog, and order management.
 
 ## Overview
 
 In this example, you will:
 1. Capture live API traffic from an e-commerce workflow
-2. Generate a Postman collection from captured traffic
-3. Create regression tests with Playwright
-4. Set up contract testing for API validation
-5. Run a mock server for offline development
+2. Export captured traffic as raw JSON
+3. Use Claude AI to generate comprehensive Playwright tests
+4. Run tests against your API
 
 ## Prerequisites
 
@@ -30,15 +29,8 @@ ecommerce-api/
 │   └── server.py               # Sample e-commerce API server
 ├── captured-traffic/
 │   └── checkout-flow.json      # Captured checkout workflow
-├── generated-tests/
-│   ├── regression.spec.ts      # Generated Playwright tests
-│   └── postman-collection.json # Generated Postman collection
-├── contracts/
-│   └── ecommerce-api.yaml      # OpenAPI contract
-└── scripts/
-    ├── capture.sh              # Traffic capture script
-    ├── generate-tests.sh       # Test generation script
-    └── run-mock.sh             # Mock server script
+└── generated-tests/
+    └── checkout.spec.ts        # AI-generated Playwright tests
 ```
 
 ## Quick Start
@@ -66,10 +58,8 @@ In a new terminal, start TraceTap to capture traffic:
 
 ```bash
 # From project root
-python tracetap.py --listen 8080 \
-    --export examples/ecommerce-api/captured-traffic/checkout-flow.json \
-    --raw-log examples/ecommerce-api/captured-traffic/raw-traffic.json \
-    --session "ecommerce-checkout" \
+tracetap capture --port 8080 \
+    --output examples/ecommerce-api/captured-traffic/checkout-flow.json \
     --filter-host "localhost:5000"
 ```
 
@@ -109,42 +99,28 @@ curl -x http://localhost:8080 http://localhost:5000/orders/1
 
 Press `Ctrl+C` in the TraceTap terminal to stop capture and export.
 
-### Step 4: Generate Regression Tests
+### Step 4: Generate Tests with Claude AI
 
-Generate Playwright tests from the captured traffic:
-
-```bash
-python tracetap-replay.py generate-regression \
-    examples/ecommerce-api/captured-traffic/checkout-flow.json \
-    -o examples/ecommerce-api/generated-tests/regression.spec.ts \
-    --grouping flow \
-    --base-url http://localhost:5000
-```
-
-### Step 5: Generate OpenAPI Contract
-
-Create an API contract from traffic:
+Use the captured JSON with Claude to generate comprehensive tests:
 
 ```bash
-python tracetap-replay.py create-contract \
-    examples/ecommerce-api/captured-traffic/checkout-flow.json \
-    -o examples/ecommerce-api/contracts/ecommerce-api.yaml \
-    --title "E-commerce API" \
-    --version "1.0.0"
+# Export the captured traffic
+tracetap export checkout-flow.json --format json
+
+# Then use Claude to generate tests
+claude "Generate Playwright API tests from this captured traffic: $(cat checkout-flow.json)"
 ```
 
-### Step 6: Run Mock Server
+Or use Claude Code directly:
 
-Start a mock server using captured responses:
-
-```bash
-python tracetap-replay.py mock \
-    examples/ecommerce-api/captured-traffic/checkout-flow.json \
-    --port 9000 \
-    --matching fuzzy
 ```
-
-Now you can develop against `http://localhost:9000` without the real API.
+@checkout-flow.json Generate comprehensive Playwright API tests for this
+e-commerce checkout flow. Include:
+- Individual endpoint tests
+- Full workflow test (browse -> cart -> checkout)
+- Error handling scenarios
+- Response validation
+```
 
 ## Captured Traffic Format
 
@@ -173,64 +149,97 @@ The captured traffic JSON follows this structure:
 }
 ```
 
-## Generated Tests
+## AI-Generated Tests
 
-The generated Playwright tests include:
-
-- **Status code assertions** - Verify correct HTTP status codes
-- **Response structure validation** - Check required fields exist
-- **Data type assertions** - Validate field types
-- **Flow testing** - Test complete user workflows
-
-Example generated test:
+When you provide captured traffic to Claude, it generates tests like:
 
 ```typescript
 import { test, expect } from '@playwright/test';
 
-test.describe('Checkout Flow', () => {
+test.describe('E-commerce Checkout Flow', () => {
   const baseURL = 'http://localhost:5000';
 
-  test('Complete checkout flow', async ({ request }) => {
+  test('GET /products returns product list', async ({ request }) => {
+    const response = await request.get(`${baseURL}/products`);
+    expect(response.status()).toBe(200);
+
+    const products = await response.json();
+    expect(Array.isArray(products)).toBe(true);
+    expect(products.length).toBeGreaterThan(0);
+    expect(products[0]).toHaveProperty('id');
+    expect(products[0]).toHaveProperty('name');
+    expect(products[0]).toHaveProperty('price');
+  });
+
+  test('POST /cart adds item to cart', async ({ request }) => {
+    const response = await request.post(`${baseURL}/cart`, {
+      data: { product_id: 1, quantity: 2 }
+    });
+    expect(response.status()).toBe(200);
+
+    const cart = await response.json();
+    expect(cart.items).toContainEqual(
+      expect.objectContaining({ product_id: 1, quantity: 2 })
+    );
+  });
+
+  test('Complete checkout workflow', async ({ request }) => {
     // Step 1: Browse products
     const products = await request.get(`${baseURL}/products`);
     expect(products.status()).toBe(200);
     const productList = await products.json();
-    expect(productList).toBeInstanceOf(Array);
 
     // Step 2: Add to cart
     const addToCart = await request.post(`${baseURL}/cart`, {
-      data: { product_id: 1, quantity: 2 }
+      data: { product_id: productList[0].id, quantity: 2 }
     });
     expect(addToCart.status()).toBe(200);
 
     // Step 3: Checkout
     const checkout = await request.post(`${baseURL}/checkout`, {
-      data: { payment_method: 'credit_card', shipping_address: '123 Main St' }
+      data: {
+        payment_method: 'credit_card',
+        shipping_address: '123 Main St'
+      }
     });
     expect(checkout.status()).toBe(201);
+
     const order = await checkout.json();
     expect(order.id).toBeDefined();
     expect(order.status).toBe('confirmed');
+
+    // Step 4: Verify order
+    const orderStatus = await request.get(`${baseURL}/orders/${order.id}`);
+    expect(orderStatus.status()).toBe(200);
   });
 });
 ```
 
-## Contract Testing
+## Claude AI Prompts for Test Generation
 
-The generated OpenAPI contract enables:
+### Basic Test Generation
+```
+Generate Playwright API tests from this traffic JSON.
+Focus on status codes and response structure validation.
+```
 
-1. **Schema validation** - Ensure responses match expected structure
-2. **Breaking change detection** - Catch API changes before deployment
-3. **Documentation** - Auto-generated API docs
+### Comprehensive Test Generation
+```
+Generate comprehensive Playwright API tests including:
+1. Individual endpoint tests with assertions
+2. Workflow tests that chain requests together
+3. Edge case tests (invalid inputs, missing fields)
+4. Response time assertions
+5. Data validation for critical fields
+```
 
-Verify contract compliance:
-
-```bash
-# Compare baseline vs current contract
-python tracetap-replay.py verify-contract \
-    examples/ecommerce-api/contracts/baseline.yaml \
-    examples/ecommerce-api/contracts/current.yaml \
-    --fail-on-breaking
+### Regression Test Focus
+```
+Generate regression tests that will catch breaking changes:
+- Schema changes (new/removed fields)
+- Status code changes
+- Response format changes
+- Required field removal
 ```
 
 ## Real-World Integration
@@ -240,26 +249,18 @@ python tracetap-replay.py verify-contract \
 Replace the sample server with your actual API:
 
 ```bash
-python tracetap.py --listen 8080 \
-    --export captured-traffic/production.json \
+tracetap capture --port 8080 \
+    --output captured-traffic/production.json \
     --filter-host "api.yourstore.com"
 ```
 
 ### CI/CD Integration
-
-Add to your pipeline:
 
 ```yaml
 # .github/workflows/api-tests.yml
 - name: Run API Regression Tests
   run: |
     npx playwright test examples/ecommerce-api/generated-tests/
-
-- name: Verify API Contract
-  run: |
-    python tracetap-replay.py verify-contract \
-      contracts/baseline.yaml contracts/current.yaml \
-      --fail-on-breaking
 ```
 
 ## Troubleshooting
@@ -267,7 +268,7 @@ Add to your pipeline:
 ### Certificate Issues
 If you're capturing HTTPS traffic:
 ```bash
-python -m tracetap.cert_installer install
+tracetap cert install
 ```
 
 ### Proxy Not Capturing
@@ -276,21 +277,7 @@ Ensure your client respects proxy settings:
 curl -v -x http://localhost:8080 http://api.example.com/test
 ```
 
-### Mock Server Matching
-If the mock returns 404, try different matching modes:
-```bash
-# Exact matching
-python tracetap-replay.py mock traffic.json --matching exact
-
-# Fuzzy matching (handles ID differences)
-python tracetap-replay.py mock traffic.json --matching fuzzy
-
-# Pattern matching (regex-based)
-python tracetap-replay.py mock traffic.json --matching pattern
-```
-
 ## Next Steps
 
 - Explore the [Regression Suite Example](../regression-suite/) for automated test workflows
-- See [Contract Testing Example](../contract-testing/) for CI/CD integration
 - Read the main [TraceTap documentation](../../README.md) for all features
