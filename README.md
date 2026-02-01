@@ -301,26 +301,48 @@ TraceTap is a comprehensive HTTP/HTTPS traffic capture proxy that records API in
 
 ## Installation
 
-### Prerequisites
+### Quick Install (Recommended) ⚡
 
+Install TraceTap with a single command:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/VassilisSoum/tracetap/master/install.sh | bash
+```
+
+This installer will:
+- ✓ Detect your operating system (Linux, macOS, Windows)
+- ✓ Install Python 3.8+ if needed
+- ✓ Install TraceTap and all dependencies
+- ✓ Configure your PATH automatically
+- ✓ Verify the installation
+
+**Verify installation:**
+```bash
+tracetap --version
+```
+
+---
+
+### Alternative Installation Methods
+
+#### Option 1: pip install (requires Python 3.8+)
+
+```bash
+pip install tracetap
+```
+
+#### Option 2: From Source
+
+**Prerequisites:**
 - **Python**: 3.8 or higher
 - **pip**: Python package installer
 - **Git**: For cloning the repository
-- **Operating System**: Linux, macOS, or Windows
-
-### Step 1: Clone the Repository
-
-TraceTap is distributed as source code. Clone the repository to get started:
 
 ```bash
 # Clone the repository
 git clone https://github.com/VassilisSoum/tracetap.git
 cd tracetap
-```
 
-### Step 2: Install Dependencies
-
-```bash
 # Install core dependencies
 pip install -r requirements.txt
 ```
