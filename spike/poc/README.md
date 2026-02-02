@@ -41,11 +41,27 @@ This shows:
 - Console logs
 - DOM snapshots
 
-### 3. Parse Trace Events (Coming in Task #28)
+### 3. Parse Trace Events
 
 ```bash
+# Parse trace and extract events
+npx ts-node trace-parser.ts my-session.zip
+
+# Save events to JSON file
+npx ts-node trace-parser.ts my-session.zip --output events.json
+
+# Show detailed timeline
+npx ts-node trace-parser.ts my-session.zip --timeline
+
+# Or use the npm script
 npm run parse my-session.zip
 ```
+
+**What you get:**
+- Extracted UI events in TraceTap format
+- Session statistics (duration, event counts)
+- Event breakdown by type
+- Sample events
 
 ## What Gets Captured
 
@@ -86,10 +102,19 @@ The `trace.zip` contains:
 - `resources/` - Screenshots and snapshots
 - `actions.json` - Detailed action log
 
+## Test the Parser
+
+```bash
+# Run automated test
+npx ts-node test-trace-parser.ts
+
+# This creates a sample trace and validates parsing
+```
+
 ## Next Steps
 
-1. **Task #27** ✅ Build trace recorder → YOU ARE HERE
-2. **Task #28** - Build trace parser (extract events from trace.json)
+1. **Task #27** ✅ Build trace recorder
+2. **Task #28** ✅ Build trace parser → YOU ARE HERE
 3. **Task #29** - Build event correlator (link UI events to network traffic)
 4. **Task #30** - Test on sample app and measure accuracy
 
