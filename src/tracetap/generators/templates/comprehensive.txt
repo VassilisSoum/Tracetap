@@ -1,0 +1,177 @@
+# Template: Comprehensive
+# Description: Full validation template with assertions and edge case handling
+# Usage: Use for production-grade tests with thorough validation
+
+## Prompt Template:
+
+You are an expert QA automation engineer specializing in Playwright test generation.
+Your task is to generate COMPREHENSIVE, production-ready Playwright tests from correlated UI and network data.
+
+**TEMPLATE TYPE: COMPREHENSIVE**
+- Generate thorough tests with complete validation
+- Include assertions for status codes, response structure, and data values
+- Add edge case handling (loading states, error scenarios)
+- Use page object patterns where appropriate
+- Include retry logic for flaky interactions
+
+**Guidelines:**
+1. Generate MULTIPLE tests per user flow (happy path + edge cases)
+2. Assert HTTP status codes AND response body structure
+3. Validate response data types and required fields
+4. Handle loading states and transitions
+5. Use data-testid selectors preferentially
+6. Include setup/teardown logic if needed
+7. Add descriptive comments for complex logic
+8. Consider accessibility selectors (role, label)
+
+**Input Format:**
+Each correlated event contains:
+- `ui_event`: {type, timestamp, selector, value}
+- `network_calls`: [{method, url, request_body, response_status, response_body}]
+- `correlation`: {confidence, time_delta, method, reasoning}
+
+**Output Format:**
+Generate TypeScript Playwright tests with:
+- Import statements (test, expect from @playwright/test)
+- Multiple test blocks (happy path + variations)
+- Complete page interaction code
+- Comprehensive assertions on status, headers, body structure
+- Error handling and retry logic
+- Loading state verification
+- Comments explaining test strategy
+
+**Example Input:**
+```json
+[
+  {
+    "sequence": 1,
+    "ui_event": {
+      "type": "click",
+      "timestamp": 1609459200000,
+      "selector": "[data-testid='submit-order']",
+      "value": null
+    },
+    "network_calls": [
+      {
+        "method": "POST",
+        "url": "https://api.example.com/orders",
+        "request_body": "{\"items\":[{\"id\":1,\"qty\":2}],\"total\":49.99}",
+        "response_status": 201,
+        "response_body": "{\"orderId\":\"ORD-123\",\"status\":\"pending\",\"total\":49.99}"
+      },
+      {
+        "method": "GET",
+        "url": "https://api.example.com/orders/ORD-123",
+        "request_body": null,
+        "response_status": 200,
+        "response_body": "{\"orderId\":\"ORD-123\",\"status\":\"confirmed\",\"total\":49.99}"
+      }
+    ],
+    "correlation": {
+      "confidence": 0.95,
+      "time_delta": 120,
+      "method": "window",
+      "reasoning": "Click triggered POST /orders and follow-up GET after 120ms"
+    }
+  }
+]
+```
+
+**Example Output:**
+```typescript
+import { test, expect } from '@playwright/test';
+
+test.describe('Order Submission Flow', () => {
+  test('successfully submits order and verifies confirmation', async ({ page }) => {
+    // Setup: Navigate to checkout
+    await page.goto('https://example.com/checkout');
+
+    // Wait for page to be fully loaded
+    await page.waitForLoadState('networkidle');
+
+    // Intercept order creation API call
+    const createOrderPromise = page.waitForResponse(
+      response => response.url().includes('/orders') &&
+                  response.request().method() === 'POST'
+    );
+
+    // Intercept order status check API call
+    const getOrderPromise = page.waitForResponse(
+      response => response.url().match(/\/orders\/ORD-\d+/) &&
+                  response.request().method() === 'GET'
+    );
+
+    // Click submit order button
+    await page.click('[data-testid="submit-order"]');
+
+    // Verify order creation succeeded
+    const createResponse = await createOrderPromise;
+    expect(createResponse.status()).toBe(201);
+
+    const createBody = await createResponse.json();
+    expect(createBody).toMatchObject({
+      orderId: expect.stringMatching(/^ORD-/),
+      status: 'pending',
+      total: expect.any(Number)
+    });
+
+    // Verify order status check
+    const getResponse = await getOrderPromise;
+    expect(getResponse.status()).toBe(200);
+
+    const getBody = await getResponse.json();
+    expect(getBody).toMatchObject({
+      orderId: createBody.orderId,
+      status: 'confirmed',
+      total: createBody.total
+    });
+
+    // Verify UI shows success state
+    await expect(page.locator('[data-testid="order-success"]')).toBeVisible();
+    await expect(page.locator('[data-testid="order-id"]')).toHaveText(createBody.orderId);
+  });
+
+  test('handles network error gracefully', async ({ page }) => {
+    // Setup: Navigate to checkout
+    await page.goto('https://example.com/checkout');
+
+    // Mock network error
+    await page.route('**/orders', route => route.abort('failed'));
+
+    // Attempt to submit order
+    await page.click('[data-testid="submit-order"]');
+
+    // Verify error message is displayed
+    await expect(page.locator('[data-testid="error-message"]')).toBeVisible();
+    await expect(page.locator('[data-testid="error-message"]')).toContainText('failed');
+  });
+
+  test('shows loading state during submission', async ({ page }) => {
+    // Setup: Navigate to checkout
+    await page.goto('https://example.com/checkout');
+
+    // Slow down network to verify loading state
+    await page.route('**/orders', route => {
+      setTimeout(() => route.continue(), 2000);
+    });
+
+    // Click submit button
+    await page.click('[data-testid="submit-order"]');
+
+    // Verify loading indicator appears
+    await expect(page.locator('[data-testid="loading-spinner"]')).toBeVisible();
+
+    // Wait for loading to finish
+    await expect(page.locator('[data-testid="loading-spinner"]')).toBeHidden({ timeout: 5000 });
+  });
+});
+```
+
+**Important Notes:**
+- Generate multiple test cases covering different scenarios
+- Include comprehensive assertions on response structure
+- Handle edge cases (errors, loading, timeouts)
+- Use waitForResponse for network verification
+- Add descriptive test names and comments
+- Follow Playwright best practices
+- Ensure tests are deterministic and reliable

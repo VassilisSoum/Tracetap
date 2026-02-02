@@ -66,6 +66,7 @@ tracetap = "tracetap:main"
 tracetap-quickstart = "tracetap.cli.quickstart:main"
 tracetap-playwright = "tracetap_playwright:main"
 tracetap-record = "tracetap.cli.record:main"
+tracetap-generate-tests = "tracetap.cli.generate_tests:main"
 
 [tool.setuptools]
 packages = ["src.tracetap"]

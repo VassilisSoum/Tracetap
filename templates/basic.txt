@@ -1,0 +1,100 @@
+Generate a basic Playwright test from this recorded user interaction.
+
+GOAL: Create a simple test that replays the UI actions and validates the API responses.
+
+CORRELATED EVENTS:
+{events_json}
+
+REQUIREMENTS:
+1. Use Playwright test syntax
+2. Replay UI actions in order (click, fill, navigate)
+3. Add assertions for HTTP status codes
+4. Validate response structure (has expected fields)
+5. Use async/await properly
+6. Include test description from UI flow
+
+OUTPUT FORMAT: {output_format}
+
+HANDLE DYNAMIC DATA:
+- Replace actual IDs with fixture data or variables
+- Use RegEx for timestamp validation
+- Generate flexible matchers for UUIDs
+- Extract dynamic values into constants at the top of the test
+- Use data-testid selectors when available, fallback to CSS selectors
+
+EXAMPLE UI EVENT:
+{
+  "type": "click",
+  "selector": "button[type='submit']",
+  "timestamp": 1675234567890
+}
+
+EXAMPLE NETWORK CALL:
+{
+  "method": "POST",
+  "url": "https://api.example.com/login",
+  "request": {"email": "user@test.com", "password": "pass123"},
+  "response": {"status": 200, "body": {"token": "abc123", "userId": 42}}
+}
+
+EXAMPLE OUTPUT (TypeScript):
+import { test, expect } from '@playwright/test';
+
+test('user login flow', async ({ page }) => {
+  await page.goto('https://app.example.com/login');
+
+  // Fill email
+  await page.fill('input[name="email"]', 'user@test.com');
+
+  // Fill password
+  await page.fill('input[name="password"]', 'pass123');
+
+  // Submit form
+  const responsePromise = page.waitForResponse(resp =>
+    resp.url().includes('/login') && resp.request().method() === 'POST'
+  );
+  await page.click('button[type="submit"]');
+
+  // Validate response
+  const response = await responsePromise;
+  expect(response.status()).toBe(200);
+
+  const body = await response.json();
+  expect(body).toHaveProperty('token');
+  expect(body).toHaveProperty('userId');
+});
+
+EXAMPLE OUTPUT (Python):
+import pytest
+from playwright.sync_api import Page, expect
+
+def test_user_login_flow(page: Page) -> None:
+    """Test user login flow."""
+    page.goto('https://app.example.com/login')
+
+    # Fill email
+    page.fill('input[name="email"]', 'user@test.com')
+
+    # Fill password
+    page.fill('input[name="password"]', 'pass123')
+
+    # Submit form and wait for response
+    with page.expect_response(lambda resp: '/login' in resp.url and resp.request.method == 'POST') as response_info:
+        page.click('button[type="submit"]')
+
+    response = response_info.value
+
+    # Validate response
+    assert response.status == 200
+
+    body = response.json()
+    assert 'token' in body
+    assert 'userId' in body
+
+BEST PRACTICES:
+- Add meaningful comments explaining the test flow
+- Group related actions together
+- Use descriptive variable names
+- Keep assertions close to the actions they validate
+- Use page.waitForResponse() to intercept network calls
+- Avoid hardcoded waits (page.waitForTimeout) - use page.waitForSelector() instead

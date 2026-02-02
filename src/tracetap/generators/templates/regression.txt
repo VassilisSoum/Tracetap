@@ -1,0 +1,204 @@
+# Template: Regression
+# Description: Contract-focused template with schema validation
+# Usage: Use for contract testing and preventing API regressions
+
+## Prompt Template:
+
+You are an expert QA automation engineer specializing in contract testing and API regression prevention.
+Your task is to generate CONTRACT-FOCUSED Playwright tests from correlated UI and network data.
+
+**TEMPLATE TYPE: REGRESSION**
+- Focus on API contract validation (schema, required fields, data types)
+- Generate tests that detect breaking changes in API responses
+- Include request/response schema validation
+- Use JSON Schema or TypeScript types for validation
+- Capture and assert on data structure, not specific values
+
+**Guidelines:**
+1. Generate tests that validate API contracts
+2. Assert response schema matches expected structure
+3. Validate required fields are present
+4. Check data types (string, number, boolean, array, object)
+5. Validate array structures and nested objects
+6. Use schema validation libraries (zod, ajv, or TypeScript types)
+7. Focus on structure over specific values
+8. Include both success and error response schemas
+
+**Input Format:**
+Each correlated event contains:
+- `ui_event`: {type, timestamp, selector, value}
+- `network_calls`: [{method, url, request_body, response_status, response_body}]
+- `correlation`: {confidence, time_delta, method, reasoning}
+
+**Output Format:**
+Generate TypeScript Playwright tests with:
+- Import statements (test, expect, z from zod)
+- Type definitions or Zod schemas for responses
+- Test blocks validating contract compliance
+- Schema validation for request and response
+- Assertions on structure, not values
+- Comments explaining schema requirements
+
+**Example Input:**
+```json
+[
+  {
+    "sequence": 1,
+    "ui_event": {
+      "type": "click",
+      "timestamp": 1609459200000,
+      "selector": "[data-testid='load-users']",
+      "value": null
+    },
+    "network_calls": [
+      {
+        "method": "GET",
+        "url": "https://api.example.com/users?page=1",
+        "request_body": null,
+        "response_status": 200,
+        "response_body": "{\"users\":[{\"id\":1,\"name\":\"John\",\"email\":\"john@example.com\"}],\"total\":100,\"page\":1}"
+      }
+    ],
+    "correlation": {
+      "confidence": 0.85,
+      "time_delta": 80,
+      "method": "window",
+      "reasoning": "Click triggered GET /users after 80ms"
+    }
+  }
+]
+```
+
+**Example Output:**
+```typescript
+import { test, expect } from '@playwright/test';
+import { z } from 'zod';
+
+// Define expected response schema
+const UserSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  email: z.string().email()
+});
+
+const UserListResponseSchema = z.object({
+  users: z.array(UserSchema),
+  total: z.number(),
+  page: z.number()
+});
+
+test.describe('User API Contract Tests', () => {
+  test('GET /users returns valid schema', async ({ page }) => {
+    // Navigate to users page
+    await page.goto('https://example.com/users');
+
+    // Intercept users API call
+    const responsePromise = page.waitForResponse(
+      response => response.url().includes('/users') &&
+                  response.request().method() === 'GET'
+    );
+
+    // Trigger API call
+    await page.click('[data-testid="load-users"]');
+
+    // Get response
+    const response = await responsePromise;
+    expect(response.status()).toBe(200);
+
+    // Validate response body against schema
+    const body = await response.json();
+    const validationResult = UserListResponseSchema.safeParse(body);
+
+    expect(validationResult.success).toBe(true);
+
+    if (!validationResult.success) {
+      console.error('Schema validation failed:', validationResult.error.issues);
+    }
+
+    // Additional contract assertions
+    expect(body.users).toBeInstanceOf(Array);
+    expect(body.users.length).toBeGreaterThan(0);
+
+    // Validate each user has required fields
+    body.users.forEach(user => {
+      expect(user).toHaveProperty('id');
+      expect(user).toHaveProperty('name');
+      expect(user).toHaveProperty('email');
+      expect(typeof user.id).toBe('number');
+      expect(typeof user.name).toBe('string');
+      expect(typeof user.email).toBe('string');
+    });
+
+    // Validate pagination fields
+    expect(typeof body.total).toBe('number');
+    expect(typeof body.page).toBe('number');
+    expect(body.total).toBeGreaterThanOrEqual(body.users.length);
+  });
+
+  test('GET /users validates request parameters', async ({ page }) => {
+    // Navigate to users page
+    await page.goto('https://example.com/users');
+
+    // Intercept and validate request
+    page.on('request', request => {
+      if (request.url().includes('/users')) {
+        const url = new URL(request.url());
+
+        // Validate query parameters
+        const page = url.searchParams.get('page');
+        expect(page).toBeTruthy();
+        expect(Number(page)).toBeGreaterThan(0);
+      }
+    });
+
+    // Trigger API call
+    await page.click('[data-testid="load-users"]');
+  });
+
+  test('GET /users error response matches schema', async ({ page }) => {
+    // Navigate to users page
+    await page.goto('https://example.com/users');
+
+    // Mock error response
+    await page.route('**/users*', route => {
+      route.fulfill({
+        status: 400,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          error: 'Invalid page parameter',
+          code: 'INVALID_PARAM',
+          details: { field: 'page', value: '-1' }
+        })
+      });
+    });
+
+    // Intercept error response
+    const responsePromise = page.waitForResponse(
+      response => response.url().includes('/users')
+    );
+
+    // Trigger API call
+    await page.click('[data-testid="load-users"]');
+
+    // Validate error response schema
+    const response = await responsePromise;
+    expect(response.status()).toBe(400);
+
+    const body = await response.json();
+    expect(body).toHaveProperty('error');
+    expect(body).toHaveProperty('code');
+    expect(typeof body.error).toBe('string');
+    expect(typeof body.code).toBe('string');
+  });
+});
+```
+
+**Important Notes:**
+- Focus on API contract validation, not specific data values
+- Use schema validation libraries (Zod recommended)
+- Validate both success and error response structures
+- Check data types and required fields
+- Generate tests that catch breaking API changes
+- Include validation for nested objects and arrays
+- Add descriptive error messages for schema violations
+- Consider versioned APIs (validate correct version is called)
