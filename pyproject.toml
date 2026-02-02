@@ -35,6 +35,7 @@ dependencies = [
     "typing-extensions>=4.3,<=4.11.0",
     "rich>=13.0.0",
     "click>=8.0.0",
+    "playwright>=1.40.0",
 ]
 
 [project.optional-dependencies]
@@ -64,6 +65,7 @@ Documentation = "https://github.com/VassilisSoum/tracetap#readme"
 tracetap = "tracetap:main"
 tracetap-quickstart = "tracetap.cli.quickstart:main"
 tracetap-playwright = "tracetap_playwright:main"
+tracetap-record = "tracetap.cli.record:main"
 
 [tool.setuptools]
 packages = ["src.tracetap"]

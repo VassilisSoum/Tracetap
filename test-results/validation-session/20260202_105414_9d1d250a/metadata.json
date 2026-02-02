@@ -1,0 +1,14 @@
+{
+  "session_id": "20260202_105414_9d1d250a",
+  "session_name": "phase1-validation",
+  "url": "https://demo.playwright.dev/todomvc/",
+  "start_time": "2026-02-02T10:54:14.572861",
+  "end_time": null,
+  "duration": null,
+  "output_dir": "test-results/validation-session/20260202_105414_9d1d250a",
+  "trace_file": "test-results/validation-session/20260202_105414_9d1d250a/trace.zip",
+  "events_file": "test-results/validation-session/20260202_105414_9d1d250a/events.json",
+  "correlation_file": "test-results/validation-session/20260202_105414_9d1d250a/correlation.json",
+  "traffic_path": "test-results/validation-session/20260202_105414_9d1d250a/traffic.json",
+  "status": "recording"
+}
