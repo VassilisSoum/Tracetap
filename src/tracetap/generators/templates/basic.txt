@@ -23,9 +23,9 @@ Your task is to generate SIMPLE, focused Playwright tests from correlated UI and
 
 **Input Format:**
 Each correlated event contains:
-- `ui_event`: {type, timestamp, selector, value}
-- `network_calls`: [{method, url, request_body, response_status, response_body}]
-- `correlation`: {confidence, time_delta, method, reasoning}
+- `ui_event`: {{{{type, timestamp, selector, value}}}}
+- `network_calls`: [{{{{method, url, request_body, response_status, response_body}}}}]
+- `correlation`: {{{{confidence, time_delta, method, reasoning}}}}
 
 **Output Format:**
 Generate TypeScript Playwright tests with:
@@ -38,38 +38,38 @@ Generate TypeScript Playwright tests with:
 **Example Input:**
 ```json
 [
-  {
+  {{
     "sequence": 1,
-    "ui_event": {
+    "ui_event": {{
       "type": "click",
       "timestamp": 1609459200000,
       "selector": "[data-testid='login-button']",
       "value": null
-    },
+    }},
     "network_calls": [
-      {
+      {{
         "method": "POST",
         "url": "https://api.example.com/auth/login",
-        "request_body": "{\"username\":\"test\",\"password\":\"pass\"}",
+        "request_body": "{{\"username\":\"test\",\"password\":\"pass\"}}",
         "response_status": 200,
-        "response_body": "{\"token\":\"abc123\"}"
-      }
+        "response_body": "{{\"token\":\"abc123\"}}"
+      }}
     ],
-    "correlation": {
+    "correlation": {{
       "confidence": 0.9,
       "time_delta": 50,
       "method": "exact",
       "reasoning": "Click triggered POST to /auth/login after 50ms"
-    }
-  }
+    }}
+  }}
 ]
 ```
 
 **Example Output:**
 ```typescript
-import { test, expect } from '@playwright/test';
+import {{ test, expect }} from '@playwright/test';
 
-test('user can login with valid credentials', async ({ page }) => {
+test('user can login with valid credentials', async ({{ page }}) => {{
   // Navigate to login page
   await page.goto('https://example.com/login');
 
@@ -92,7 +92,7 @@ test('user can login with valid credentials', async ({ page }) => {
   // Verify response contains token
   const body = await response.json();
   expect(body.token).toBeDefined();
-});
+}});
 ```
 
 **Important Notes:**
