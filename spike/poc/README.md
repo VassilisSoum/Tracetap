@@ -111,11 +111,45 @@ npx ts-node test-trace-parser.ts
 # This creates a sample trace and validates parsing
 ```
 
+### 4. Correlate Events with Network Traffic
+
+```bash
+# Correlate UI events with mitmproxy traffic
+npx ts-node event-correlator.ts events.json traffic.json
+
+# Save correlated events
+npx ts-node event-correlator.ts events.json traffic.json --output correlated.json
+
+# Show detailed timeline
+npx ts-node event-correlator.ts events.json traffic.json --timeline
+
+# Adjust time window (default 500ms)
+npx ts-node event-correlator.ts events.json traffic.json --window 1000
+
+# Include UI events with no network calls
+npx ts-node event-correlator.ts events.json traffic.json --include-orphans
+```
+
+**What you get:**
+- UI events linked to their API calls
+- Correlation confidence scores (0-100%)
+- Time deltas between UI and network events
+- Go/No-Go assessment for spike validation
+
+## Test the Correlator
+
+```bash
+# Run automated test with sample data
+npx ts-node test-correlator.ts
+
+# This tests correlation with synthetic UI events and network traffic
+```
+
 ## Next Steps
 
 1. **Task #27** ✅ Build trace recorder
-2. **Task #28** ✅ Build trace parser → YOU ARE HERE
-3. **Task #29** - Build event correlator (link UI events to network traffic)
+2. **Task #28** ✅ Build trace parser
+3. **Task #29** ✅ Build event correlator → YOU ARE HERE
 4. **Task #30** - Test on sample app and measure accuracy
 
 ## Troubleshooting
