@@ -25,6 +25,12 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
+# Import version
+try:
+    from tracetap import __version__
+except ImportError:
+    __version__ = "unknown"
+
 # Import recording modules
 try:
     from tracetap.record.session import RecordingSession, SessionMetadata, SessionResult
@@ -36,8 +42,9 @@ try:
     )
     from tracetap.record.parser import TraceParser
 except ImportError as e:
-    print(f"Error: Failed to import recording modules: {e}")
-    print("Please ensure tracetap is properly installed.")
+    print(f"❌ Error: Failed to import recording modules: {e}")
+    print("💡 Please ensure tracetap is properly installed:")
+    print("   pip install -e .")
     sys.exit(1)
 
 
@@ -82,7 +89,22 @@ Examples:
 
   # Full control over correlation parameters
   tracetap record https://example.com --window-ms 500 --min-confidence 0.7
+
+  # Dry-run to check configuration without recording
+  tracetap record https://example.com --dry-run
+
+Troubleshooting:
+  ❓ Port already in use?     → Use --proxy-port to specify a different port
+  ❓ Browser won't open?     → Check URL format and network connectivity
+  ❓ Low correlation rate?   → Adjust --window-ms or --min-confidence
         """,
+    )
+
+    # Version flag
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"TraceTap Record v{__version__}",
     )
 
     # Required arguments
@@ -151,6 +173,13 @@ Examples:
     )
 
     parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help="Show what would be done without actually recording",
+    )
+
+    parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -161,8 +190,20 @@ Examples:
     return parser.parse_args()
 
 
+def list_available_sessions() -> list[str]:
+    """List available recording sessions.
+
+    Returns:
+        List of available session directory names
+    """
+    recordings_dir = Path("./recordings")
+    if not recordings_dir.exists():
+        return []
+    return [d.name for d in recordings_dir.iterdir() if d.is_dir()]
+
+
 def validate_arguments(args: argparse.Namespace) -> None:
-    """Validate command-line arguments.
+    """Validate command-line arguments with helpful error messages.
 
     Args:
         args: Parsed arguments
@@ -173,26 +214,41 @@ def validate_arguments(args: argparse.Namespace) -> None:
     # Validate URL
     if not args.url.startswith(("http://", "https://")):
         raise ValueError(
-            f"Invalid URL: {args.url}. URL must start with http:// or https://"
+            f"❌ Invalid URL format: {args.url}\n"
+            f"💡 URL must start with http:// or https://\n"
+            f"   Example: https://example.com"
         )
 
     # Validate output directory
     output_path = Path(args.output)
     if output_path.exists() and not output_path.is_dir():
-        raise ValueError(f"Output path exists but is not a directory: {args.output}")
+        raise ValueError(
+            f"❌ Output path exists but is not a directory: {args.output}\n"
+            f"💡 Please use a directory path for --output"
+        )
 
     # Validate port
     if not (1 <= args.proxy_port <= 65535):
-        raise ValueError(f"Invalid proxy port: {args.proxy_port}. Must be 1-65535")
+        raise ValueError(
+            f"❌ Invalid proxy port: {args.proxy_port}\n"
+            f"💡 Port must be between 1 and 65535\n"
+            f"   Try: --proxy-port 8889"
+        )
 
     # Validate time window
     if args.window_ms < 0:
-        raise ValueError(f"Invalid time window: {args.window_ms}. Must be >= 0")
+        raise ValueError(
+            f"❌ Invalid time window: {args.window_ms}\n"
+            f"💡 Must be >= 0 milliseconds\n"
+            f"   Default: --window-ms 500"
+        )
 
     # Validate confidence threshold
     if not (0.0 <= args.min_confidence <= 1.0):
         raise ValueError(
-            f"Invalid min confidence: {args.min_confidence}. Must be 0.0-1.0"
+            f"❌ Invalid min confidence: {args.min_confidence}\n"
+            f"💡 Must be between 0.0 and 1.0\n"
+            f"   Recommended: --min-confidence 0.5 to 0.8"
         )
 
 
@@ -246,6 +302,19 @@ async def record_session(url: str, args: argparse.Namespace) -> Optional[Session
             recorder_options=recorder_options,
             proxy_port=args.proxy_port,
         )
+
+        # Dry-run mode: show configuration and exit
+        if args.dry_run:
+            console.print("[bold cyan]📋 Dry-run Mode - Configuration Check[/bold cyan]\n")
+            console.print(f"  URL: {url}")
+            console.print(f"  Session Name: {args.name or 'auto-generated'}")
+            console.print(f"  Output: {Path(args.output).absolute()}")
+            console.print(f"  Headless: {args.headless}")
+            console.print(f"  Proxy Port: {args.proxy_port}")
+            console.print(f"  Correlation Window: {args.window_ms}ms")
+            console.print(f"  Min Confidence: {args.min_confidence}\n")
+            console.print("[yellow]✓ Configuration is valid (no recording performed)[/yellow]\n")
+            return None
 
         console.print("[bold green]Starting recording session...[/bold green]\n")
 
@@ -336,7 +405,7 @@ async def record_session(url: str, args: argparse.Namespace) -> Optional[Session
         return result
 
     except KeyboardInterrupt:
-        console.print("\n\n[yellow]⚠ Recording cancelled by user[/yellow]\n")
+        console.print("\n\n[yellow]⚠️ Recording cancelled by user[/yellow]\n")
         return None
 
     except Exception as e:
@@ -351,16 +420,30 @@ def show_next_steps(result: SessionResult) -> None:
     Args:
         result: Session result with metadata
     """
+    event_count = result.parse_result.stats.get("total_events", 0) if result.parse_result else 0
+    correlation_rate = (
+        result.correlation_result.stats.get("correlation_rate", 0) * 100
+        if result.correlation_result
+        else 0
+    )
+
     console.print("\n")
     panel = Panel(
-        f"[bold white]What you can do now:[/bold white]\n\n"
-        f"1. Generate Playwright tests from this session:\n"
-        f"   [cyan]tracetap-generate {result.metadata.output_dir}[/cyan]\n\n"
-        f"2. Replay the trace file in Playwright:\n"
+        f"[bold white]✅ Recording Complete![/bold white]\n\n"
+        f"[bold]📊 Statistics:[/bold]\n"
+        f"   • UI Events Captured: {event_count}\n"
+        f"   • Correlation Rate: {correlation_rate:.1f}%\n"
+        f"   • Session Location: {result.metadata.output_dir}\n\n"
+        f"[bold white]📋 What you can do now:[/bold white]\n\n"
+        f"1. Generate Playwright tests:\n"
+        f"   [cyan]tracetap-generate-tests {result.metadata.output_dir} -o tests/generated.spec.ts[/cyan]\n\n"
+        f"2. Replay the trace in Playwright Inspector:\n"
         f"   [cyan]playwright show-trace {result.metadata.trace_file}[/cyan]\n\n"
-        f"3. Analyze correlations in detail:\n"
+        f"3. Review correlation data:\n"
         f"   [cyan]cat {result.metadata.output_dir / 'correlation.json'}[/cyan]\n\n"
-        f"[bold]Learn more:[/bold] https://github.com/VassilisSoum/tracetap",
+        f"[bold white]🔗 Resources:[/bold white]\n"
+        f"   • Documentation: https://github.com/VassilisSoum/tracetap\n"
+        f"   • Issues & Support: https://github.com/VassilisSoum/tracetap/issues",
         title="🎯 Next Steps",
         border_style="green",
     )
@@ -384,13 +467,17 @@ async def main_async() -> int:
         # Validate arguments
         validate_arguments(args)
 
-        # Show welcome
-        show_welcome(args.url, args)
+        # Show welcome (unless dry-run)
+        if not args.dry_run:
+            show_welcome(args.url, args)
 
         # Record session
         result = await record_session(args.url, args)
 
         if result is None:
+            # Dry-run is not an error
+            if args.dry_run:
+                return 0
             return 1
 
         # Show next steps
@@ -399,11 +486,11 @@ async def main_async() -> int:
         return 0
 
     except ValueError as e:
-        console.print(f"[bold red]Error: {e}[/bold red]\n")
+        console.print(f"[bold red]{e}[/bold red]\n")
         return 1
 
     except Exception as e:
-        console.print(f"[bold red]Unexpected error: {e}[/bold red]\n")
+        console.print(f"[bold red]❌ Unexpected error: {e}[/bold red]\n")
         logger.exception("Error details:")
         return 1
 

@@ -1,0 +1,486 @@
+{
+  "events": [
+    {
+      "sequence": 1,
+      "uiEvent": {
+        "type": "click",
+        "selector": "a:has-text('Products')",
+        "timestamp": 1675235000000
+      },
+      "networkCalls": [
+        {
+          "method": "GET",
+          "url": "/api/products",
+          "response": {
+            "status": 200,
+            "body": {
+              "products": [
+                { "id": 1, "name": "Laptop", "price": 99999, "inStock": true },
+                { "id": 2, "name": "Mouse", "price": 2999, "inStock": true }
+              ]
+            }
+          },
+          "timestamp": 1675235000150
+        }
+      ],
+      "correlation": {
+        "confidence": 0.88,
+        "timeDelta": 150,
+        "method": "WINDOW",
+        "reasoning": "Click on Products triggered GET /api/products within 150ms"
+      }
+    },
+    {
+      "sequence": 2,
+      "uiEvent": {
+        "type": "click",
+        "selector": "a:has-text('Laptop')",
+        "timestamp": 1675235005000
+      },
+      "networkCalls": [
+        {
+          "method": "GET",
+          "url": "/api/products/1",
+          "response": {
+            "status": 200,
+            "body": {
+              "id": 1,
+              "name": "Laptop",
+              "price": 99999,
+              "description": "High-performance laptop",
+              "inStock": true,
+              "images": ["laptop-1.jpg", "laptop-2.jpg"]
+            }
+          },
+          "timestamp": 1675235005180
+        }
+      ],
+      "correlation": {
+        "confidence": 0.90,
+        "timeDelta": 180,
+        "method": "WINDOW",
+        "reasoning": "Product click triggered GET /api/products/:id within 180ms"
+      }
+    },
+    {
+      "sequence": 3,
+      "uiEvent": {
+        "type": "change",
+        "selector": "input[name='quantity']",
+        "value": "2",
+        "timestamp": 1675235010000
+      },
+      "networkCalls": [],
+      "correlation": {
+        "confidence": 0.0,
+        "timeDelta": null,
+        "method": "NONE",
+        "reasoning": "Quantity change is client-side only, no API call"
+      }
+    },
+    {
+      "sequence": 4,
+      "uiEvent": {
+        "type": "click",
+        "selector": "button:has-text('Add to Cart')",
+        "timestamp": 1675235012000
+      },
+      "networkCalls": [
+        {
+          "method": "POST",
+          "url": "/api/cart",
+          "request": {
+            "productId": 1,
+            "quantity": 2
+          },
+          "response": {
+            "status": 201,
+            "body": {
+              "cartId": "cart-123",
+              "items": [
+                { "productId": 1, "quantity": 2, "price": 99999 }
+              ],
+              "total": 199998
+            }
+          },
+          "timestamp": 1675235012150
+        }
+      ],
+      "correlation": {
+        "confidence": 0.92,
+        "timeDelta": 150,
+        "method": "WINDOW",
+        "reasoning": "Add to Cart click triggered POST /api/cart within 150ms"
+      }
+    },
+    {
+      "sequence": 5,
+      "uiEvent": {
+        "type": "click",
+        "selector": "a:has-text('Continue Shopping')",
+        "timestamp": 1675235015000
+      },
+      "networkCalls": [
+        {
+          "method": "GET",
+          "url": "/api/products",
+          "response": {
+            "status": 200,
+            "body": {
+              "products": [
+                { "id": 1, "name": "Laptop", "price": 99999, "inStock": true },
+                { "id": 2, "name": "Mouse", "price": 2999, "inStock": true }
+              ]
+            }
+          },
+          "timestamp": 1675235015120
+        }
+      ],
+      "correlation": {
+        "confidence": 0.85,
+        "timeDelta": 120,
+        "method": "WINDOW",
+        "reasoning": "Continue Shopping click triggered GET /api/products within 120ms"
+      }
+    },
+    {
+      "sequence": 6,
+      "uiEvent": {
+        "type": "click",
+        "selector": "a:has-text('Mouse')",
+        "timestamp": 1675235020000
+      },
+      "networkCalls": [
+        {
+          "method": "GET",
+          "url": "/api/products/2",
+          "response": {
+            "status": 200,
+            "body": {
+              "id": 2,
+              "name": "Mouse",
+              "price": 2999,
+              "description": "Wireless mouse",
+              "inStock": true,
+              "images": ["mouse-1.jpg"]
+            }
+          },
+          "timestamp": 1675235020160
+        }
+      ],
+      "correlation": {
+        "confidence": 0.89,
+        "timeDelta": 160,
+        "method": "WINDOW",
+        "reasoning": "Product click triggered GET /api/products/:id within 160ms"
+      }
+    },
+    {
+      "sequence": 7,
+      "uiEvent": {
+        "type": "click",
+        "selector": "button:has-text('Add to Cart')",
+        "timestamp": 1675235022500
+      },
+      "networkCalls": [
+        {
+          "method": "POST",
+          "url": "/api/cart",
+          "request": {
+            "productId": 2,
+            "quantity": 1
+          },
+          "response": {
+            "status": 201,
+            "body": {
+              "cartId": "cart-123",
+              "items": [
+                { "productId": 1, "quantity": 2, "price": 99999 },
+                { "productId": 2, "quantity": 1, "price": 2999 }
+              ],
+              "total": 202997
+            }
+          },
+          "timestamp": 1675235022680
+        }
+      ],
+      "correlation": {
+        "confidence": 0.91,
+        "timeDelta": 180,
+        "method": "WINDOW",
+        "reasoning": "Add to Cart click triggered POST /api/cart within 180ms"
+      }
+    },
+    {
+      "sequence": 8,
+      "uiEvent": {
+        "type": "click",
+        "selector": "a:has-text('View Cart')",
+        "timestamp": 1675235025000
+      },
+      "networkCalls": [
+        {
+          "method": "GET",
+          "url": "/api/cart",
+          "response": {
+            "status": 200,
+            "body": {
+              "cartId": "cart-123",
+              "items": [
+                { "productId": 1, "name": "Laptop", "quantity": 2, "unitPrice": 99999 },
+                { "productId": 2, "name": "Mouse", "quantity": 1, "unitPrice": 2999 }
+              ],
+              "subtotal": 202997,
+              "tax": 16240,
+              "total": 219237
+            }
+          },
+          "timestamp": 1675235025130
+        }
+      ],
+      "correlation": {
+        "confidence": 0.87,
+        "timeDelta": 130,
+        "method": "WINDOW",
+        "reasoning": "View Cart click triggered GET /api/cart within 130ms"
+      }
+    },
+    {
+      "sequence": 9,
+      "uiEvent": {
+        "type": "click",
+        "selector": "button:has-text('Checkout')",
+        "timestamp": 1675235030000
+      },
+      "networkCalls": [
+        {
+          "method": "GET",
+          "url": "/api/checkout/form",
+          "response": {
+            "status": 200,
+            "body": {
+              "formFields": ["email", "name", "address", "city", "zip", "country"]
+            }
+          },
+          "timestamp": 1675235030100
+        }
+      ],
+      "correlation": {
+        "confidence": 0.82,
+        "timeDelta": 100,
+        "method": "WINDOW",
+        "reasoning": "Checkout click triggered GET /api/checkout/form within 100ms"
+      }
+    },
+    {
+      "sequence": 10,
+      "uiEvent": {
+        "type": "fill",
+        "selector": "input[name='email']",
+        "value": "john@example.com",
+        "timestamp": 1675235035000
+      },
+      "networkCalls": [],
+      "correlation": {
+        "confidence": 0.0,
+        "timeDelta": null,
+        "method": "NONE",
+        "reasoning": "Form field filling is client-side only"
+      }
+    },
+    {
+      "sequence": 11,
+      "uiEvent": {
+        "type": "fill",
+        "selector": "input[name='fullName']",
+        "value": "John Doe",
+        "timestamp": 1675235037000
+      },
+      "networkCalls": [],
+      "correlation": {
+        "confidence": 0.0,
+        "timeDelta": null,
+        "method": "NONE",
+        "reasoning": "Form field filling is client-side only"
+      }
+    },
+    {
+      "sequence": 12,
+      "uiEvent": {
+        "type": "fill",
+        "selector": "input[name='address']",
+        "value": "123 Main St",
+        "timestamp": 1675235039000
+      },
+      "networkCalls": [],
+      "correlation": {
+        "confidence": 0.0,
+        "timeDelta": null,
+        "method": "NONE",
+        "reasoning": "Form field filling is client-side only"
+      }
+    },
+    {
+      "sequence": 13,
+      "uiEvent": {
+        "type": "fill",
+        "selector": "input[name='city']",
+        "value": "Springfield",
+        "timestamp": 1675235041000
+      },
+      "networkCalls": [],
+      "correlation": {
+        "confidence": 0.0,
+        "timeDelta": null,
+        "method": "NONE",
+        "reasoning": "Form field filling is client-side only"
+      }
+    },
+    {
+      "sequence": 14,
+      "uiEvent": {
+        "type": "fill",
+        "selector": "input[name='zipCode']",
+        "value": "12345",
+        "timestamp": 1675235043000
+      },
+      "networkCalls": [],
+      "correlation": {
+        "confidence": 0.0,
+        "timeDelta": null,
+        "method": "NONE",
+        "reasoning": "Form field filling is client-side only"
+      }
+    },
+    {
+      "sequence": 15,
+      "uiEvent": {
+        "type": "click",
+        "selector": "button:has-text('Continue to Payment')",
+        "timestamp": 1675235045000
+      },
+      "networkCalls": [
+        {
+          "method": "POST",
+          "url": "/api/checkout/shipping",
+          "request": {
+            "email": "john@example.com",
+            "fullName": "John Doe",
+            "address": "123 Main St",
+            "city": "Springfield",
+            "zipCode": "12345"
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "checkoutSessionId": "session-456",
+              "shippingMethod": "standard",
+              "shippingCost": 999
+            }
+          },
+          "timestamp": 1675235045200
+        }
+      ],
+      "correlation": {
+        "confidence": 0.94,
+        "timeDelta": 200,
+        "method": "WINDOW",
+        "reasoning": "Form submission triggered POST /api/checkout/shipping within 200ms"
+      }
+    },
+    {
+      "sequence": 16,
+      "uiEvent": {
+        "type": "fill",
+        "selector": "input[name='cardNumber']",
+        "value": "4242424242424242",
+        "timestamp": 1675235050000
+      },
+      "networkCalls": [],
+      "correlation": {
+        "confidence": 0.0,
+        "timeDelta": null,
+        "method": "NONE",
+        "reasoning": "Payment form field is client-side only (not sent directly)"
+      }
+    },
+    {
+      "sequence": 17,
+      "uiEvent": {
+        "type": "click",
+        "selector": "button:has-text('Complete Purchase')",
+        "timestamp": 1675235055000
+      },
+      "networkCalls": [
+        {
+          "method": "POST",
+          "url": "/api/checkout/payment",
+          "request": {
+            "sessionId": "session-456",
+            "stripeToken": "tok_visa"
+          },
+          "response": {
+            "status": 201,
+            "body": {
+              "orderId": "order-789",
+              "status": "confirmed",
+              "total": 220236,
+              "estimatedDelivery": "2026-02-09"
+            }
+          },
+          "timestamp": 1675235055300
+        }
+      ],
+      "correlation": {
+        "confidence": 0.93,
+        "timeDelta": 300,
+        "method": "WINDOW",
+        "reasoning": "Payment submission triggered POST /api/checkout/payment within 300ms"
+      }
+    },
+    {
+      "sequence": 18,
+      "uiEvent": {
+        "type": "click",
+        "selector": "a:has-text('View Order')",
+        "timestamp": 1675235060000
+      },
+      "networkCalls": [
+        {
+          "method": "GET",
+          "url": "/api/orders/order-789",
+          "response": {
+            "status": 200,
+            "body": {
+              "orderId": "order-789",
+              "items": [
+                { "name": "Laptop", "quantity": 2, "unitPrice": 99999 },
+                { "name": "Mouse", "quantity": 1, "unitPrice": 2999 }
+              ],
+              "total": 220236,
+              "status": "confirmed",
+              "createdAt": "2026-02-02T14:00:55Z"
+            }
+          },
+          "timestamp": 1675235060150
+        }
+      ],
+      "correlation": {
+        "confidence": 0.88,
+        "timeDelta": 150,
+        "method": "WINDOW",
+        "reasoning": "View Order click triggered GET /api/orders/:id within 150ms"
+      }
+    }
+  ],
+  "stats": {
+    "totalUIEvents": 18,
+    "correlatedUIEvents": 14,
+    "totalNetworkCalls": 12,
+    "correlatedNetworkCalls": 12,
+    "correlationRate": 0.78,
+    "averageConfidence": 0.89,
+    "averageTimeDelta": 156.25,
+    "sessionDuration": 135.0
+  }
+}

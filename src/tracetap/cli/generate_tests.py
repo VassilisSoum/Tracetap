@@ -24,6 +24,12 @@ from ..record.correlator import (
 )
 from ..record.parser import TraceTapEvent, EventType
 
+# Import version
+try:
+    from tracetap import __version__
+except ImportError:
+    __version__ = "unknown"
+
 logger = logging.getLogger(__name__)
 
 
@@ -116,6 +122,7 @@ async def generate_tests_from_session(
     api_key: Optional[str],
     base_url: Optional[str],
     verbose: bool,
+    dry_run: bool = False,
 ) -> int:
     """Generate tests from a recorded session.
 
@@ -128,6 +135,7 @@ async def generate_tests_from_session(
         api_key: Anthropic API key
         base_url: Base URL for tests
         verbose: Enable verbose logging
+        dry_run: Show what would be done without actually generating
 
     Returns:
         Exit code (0=success, 1=error)
@@ -138,18 +146,35 @@ async def generate_tests_from_session(
 
     if not correlation_file.exists():
         print(f"❌ Error: No correlation file found at {correlation_file}")
-        print("Hint: Run 'tracetap record' first to create a session")
+        print(f"💡 Available sessions in ./recordings:")
+        recordings_dir = Path("./recordings")
+        if recordings_dir.exists():
+            sessions = [d.name for d in recordings_dir.iterdir() if d.is_dir()]
+            if sessions:
+                for session in sessions[:5]:
+                    print(f"   • {session}")
+            else:
+                print("   (none)")
+        else:
+            print("   (no recordings directory)")
+        print(f"\n💡 Did you run 'tracetap record' first?")
         return 1
 
     try:
         correlation_result = load_correlation_result(correlation_file)
-        print(f"✅ Loaded {len(correlation_result.correlated_events)} correlated events")
-        print(
-            f"   Correlation rate: {correlation_result.stats.get('correlation_rate', 0) * 100:.1f}%"
-        )
-        print(
-            f"   Average confidence: {correlation_result.stats.get('average_confidence', 0) * 100:.1f}%"
-        )
+        event_count = len(correlation_result.correlated_events)
+        correlation_rate = correlation_result.stats.get("correlation_rate", 0) * 100
+        avg_confidence = correlation_result.stats.get("average_confidence", 0) * 100
+
+        print(f"✅ Loaded {event_count} correlated events")
+        print(f"   Correlation rate: {correlation_rate:.1f}%")
+        print(f"   Average confidence: {avg_confidence:.1f}%")
+
+        if event_count == 0:
+            print(f"\n⚠️ Warning: No correlated events found")
+            print(f"💡 Try re-recording with adjusted parameters:")
+            print(f"   • Increase --window-ms to capture more events")
+            print(f"   • Lower --min-confidence threshold")
     except Exception as e:
         print(f"❌ Error loading correlation data: {e}")
         if verbose:
@@ -158,12 +183,28 @@ async def generate_tests_from_session(
             traceback.print_exc()
         return 1
 
+    # Dry-run mode
+    if dry_run:
+        print(f"\n📋 Dry-run Mode - Configuration Check\n")
+        print(f"  Session: {session_dir}")
+        print(f"  Output: {output_file.absolute()}")
+        print(f"  Template: {template}")
+        print(f"  Format: {output_format}")
+        print(f"  Confidence threshold: {confidence_threshold}")
+        if base_url:
+            print(f"  Base URL: {base_url}")
+        print(f"\n✓ Configuration is valid (no tests generated)\n")
+        return 0
+
     # Initialize generator
     print(f"\n🤖 Initializing AI test generator...")
     try:
         generator = TestGenerator(api_key=api_key)
     except Exception as e:
         print(f"❌ Error initializing generator: {e}")
+        print(f"💡 Make sure your API key is valid:")
+        print(f"   • Set ANTHROPIC_API_KEY environment variable")
+        print(f"   • Or use --api-key parameter")
         if verbose:
             import traceback
 
@@ -186,6 +227,10 @@ async def generate_tests_from_session(
         test_code = await generator.generate_tests(correlation_result, options)
     except Exception as e:
         print(f"\n❌ Error generating tests: {e}")
+        print(f"💡 Troubleshooting:")
+        print(f"   • Check your API key is valid")
+        print(f"   • Check your network connection")
+        print(f"   • Try a simpler template (basic)")
         if verbose:
             import traceback
 
@@ -201,16 +246,29 @@ async def generate_tests_from_session(
     file_size = len(test_code)
 
     print(f"\n✅ Tests generated successfully!")
-    print(f"   Output file: {output_file}")
-    print(f"   Lines: {lines}")
-    print(f"   Size: {file_size} bytes")
+    print(f"   📝 Output file: {output_file}")
+    print(f"   📊 Statistics:")
+    print(f"      • Lines: {lines}")
+    print(f"      • Size: {file_size} bytes")
+    print(f"      • Template: {template}")
     print(f"\n💡 Next steps:")
-    print(f"   1. Review the generated test: {output_file}")
+    print(f"   1. Review the generated test:")
+    print(f"      cat {output_file}")
 
     if output_format in ["typescript", "javascript"]:
-        print(f"   2. Run tests: npx playwright test {output_file}")
+        print(f"\n   2. Install Playwright (if needed):")
+        print(f"      npm install -D @playwright/test")
+        print(f"\n   3. Run tests:")
+        print(f"      npx playwright test {output_file}")
     else:
-        print(f"   2. Run tests: pytest {output_file}")
+        print(f"\n   2. Install pytest (if needed):")
+        print(f"      pip install pytest")
+        print(f"\n   3. Run tests:")
+        print(f"      pytest {output_file}")
+
+    print(f"\n🔗 Resources:")
+    print(f"   • Playwright docs: https://playwright.dev")
+    print(f"   • TraceTap docs: https://github.com/VassilisSoum/tracetap")
 
     return 0
 
@@ -223,24 +281,38 @@ def main() -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Generate from session directory
+  # Basic: Generate from session directory
   tracetap-generate-tests recordings/my-session -o tests/generated.spec.ts
 
-  # Use comprehensive template
-  tracetap-generate-tests recordings/my-session -o tests/full.spec.ts --template comprehensive
+  # Use comprehensive template with details
+  tracetap-generate-tests recordings/my-session -o tests/full.spec.ts \\
+    --template comprehensive --base-url https://myapp.com
 
   # Generate Python tests
-  tracetap-generate-tests recordings/my-session -o tests/test_flow.py --format python
+  tracetap-generate-tests recordings/my-session -o tests/test_flow.py \\
+    --format python
 
-  # Higher confidence threshold
-  tracetap-generate-tests recordings/my-session -o tests/strict.spec.ts --min-confidence 0.8
+  # Higher confidence threshold for stricter correlation
+  tracetap-generate-tests recordings/my-session -o tests/strict.spec.ts \\
+    --min-confidence 0.8
 
-  # Custom API key
-  tracetap-generate-tests recordings/my-session -o tests/output.spec.ts --api-key sk-ant-...
+  # Dry-run to check configuration
+  tracetap-generate-tests recordings/my-session -o tests/output.spec.ts \\
+    --dry-run
 
-  # Specify base URL
-  tracetap-generate-tests recordings/my-session -o tests/output.spec.ts --base-url https://myapp.com
+Troubleshooting:
+  ❓ No correlation file?    → Run 'tracetap record' first
+  ❓ Low event count?        → Re-record with different --window-ms
+  ❓ API key error?          → Set ANTHROPIC_API_KEY environment variable
+  ❓ Want to preview output? → Use --dry-run first
         """,
+    )
+
+    # Version flag
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"TraceTap Generate Tests v{__version__}",
     )
 
     parser.add_argument(
@@ -260,7 +332,7 @@ Examples:
         "--template",
         choices=["basic", "comprehensive", "regression"],
         default="comprehensive",
-        help="Test generation template (default: comprehensive)",
+        help="Test template: basic (simple), comprehensive (detailed), regression (thorough)",
     )
 
     parser.add_argument(
@@ -282,7 +354,7 @@ Examples:
     parser.add_argument(
         "--base-url",
         type=str,
-        help="Base URL for the application under test",
+        help="Base URL for the application under test (optional)",
     )
 
     parser.add_argument(
@@ -290,7 +362,13 @@ Examples:
     )
 
     parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Enable verbose output"
+        "--dry-run",
+        action="store_true",
+        help="Show what would be done without actually generating tests",
+    )
+
+    parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose debug output"
     )
 
     args = parser.parse_args()
@@ -306,25 +384,41 @@ Examples:
     # Validation
     if not args.session.exists():
         print(f"❌ Error: Session directory not found: {args.session}")
+        print(f"💡 Available sessions in ./recordings:")
+        recordings_dir = Path("./recordings")
+        if recordings_dir.exists():
+            sessions = [d.name for d in recordings_dir.iterdir() if d.is_dir()]
+            if sessions:
+                for session in sessions[:5]:
+                    print(f"   • {session}")
+            else:
+                print("   (no sessions yet)")
+        else:
+            print("   (no recordings directory)")
         return 1
 
     if not args.session.is_dir():
         print(f"❌ Error: Not a directory: {args.session}")
+        print(f"💡 Please provide the path to a session directory")
         return 1
 
     if args.min_confidence < 0 or args.min_confidence > 1:
         print(f"❌ Error: --min-confidence must be between 0.0 and 1.0")
+        print(f"💡 Try: --min-confidence 0.5 (default) or 0.8 (stricter)")
         return 1
 
-    # Check for API key
+    # Check for API key (not needed for dry-run)
     api_key = args.api_key
-    if not api_key:
-        api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not args.dry_run:
         if not api_key:
-            print("❌ Error: Anthropic API key required")
-            print("   Set ANTHROPIC_API_KEY environment variable or use --api-key")
-            print("\n💡 Get your API key at: https://console.anthropic.com/")
-            return 1
+            api_key = os.environ.get("ANTHROPIC_API_KEY")
+            if not api_key:
+                print("❌ Error: Anthropic API key required")
+                print("💡 Set it in one of two ways:")
+                print("   1. Environment variable: export ANTHROPIC_API_KEY=sk-ant-...")
+                print("   2. Command argument: --api-key sk-ant-...")
+                print("\n🔗 Get your API key at: https://console.anthropic.com/")
+                return 1
 
     # Run generation
     try:
@@ -338,13 +432,15 @@ Examples:
                 api_key=api_key,
                 base_url=args.base_url,
                 verbose=args.verbose,
+                dry_run=args.dry_run,
             )
         )
     except KeyboardInterrupt:
-        print("\n\n⚠️  Interrupted by user")
+        print("\n\n⚠️ Interrupted by user")
         return 130
     except Exception as e:
         print(f"\n❌ Unexpected error: {e}")
+        print(f"💡 Enable verbose mode for more details: -v")
         if args.verbose:
             import traceback
 
