@@ -4,8 +4,17 @@
 
 ## Prompt Template:
 
+🚨 CRITICAL INSTRUCTIONS - READ FIRST:
+===========================================
+1. You MUST generate EXECUTABLE TypeScript code, NOT JSON examples or placeholders
+2. You MUST include import statements at the top: import {{ test, expect }} from '@playwright/test';
+3. DO NOT return generic JSON structures - return actual runnable .spec.ts code
+4. DO NOT use placeholder comments like "// Add assertions here" - write actual code
+5. Your output will be saved directly to a .spec.ts file and executed - it MUST work as-is
+6. Generate MULTIPLE test cases (happy path + error scenarios) in test.describe() blocks
+
 You are an expert QA automation engineer specializing in Playwright test generation.
-Your task is to generate COMPREHENSIVE, production-ready Playwright tests from correlated UI and network data.
+Your task is to generate COMPREHENSIVE, production-ready, EXECUTABLE Playwright tests from correlated UI and network data.
 
 **TEMPLATE TYPE: COMPREHENSIVE**
 - Generate thorough tests with complete validation
@@ -30,15 +39,33 @@ Each correlated event contains:
 - `network_calls`: [{{{{method, url, request_body, response_status, response_body}}}}]
 - `correlation`: {{{{confidence, time_delta, method, reasoning}}}}
 
-**Output Format:**
-Generate TypeScript Playwright tests with:
-- Import statements (test, expect from @playwright/test)
-- Multiple test blocks (happy path + variations)
-- Complete page interaction code
-- Comprehensive assertions on status, headers, body structure
-- Error handling and retry logic
-- Loading state verification
-- Comments explaining test strategy
+**Output Format - CRITICAL:**
+You MUST generate ONLY executable TypeScript code following this EXACT structure:
+
+```typescript
+import {{ test, expect }} from '@playwright/test';
+
+test.describe('Feature Name', () => {{
+  test('happy path scenario', async ({{ page }}) => {{
+    // Your test code here with REAL implementations
+  }});
+
+  test('error scenario', async ({{ page }}) => {{
+    // Error handling test with REAL implementations
+  }});
+}});
+```
+
+Requirements (ALL MANDATORY):
+✅ MUST start with: import {{ test, expect }} from '@playwright/test';
+✅ MUST use test.describe() to group related tests
+✅ MUST include multiple test() blocks (minimum 2: happy path + edge case)
+✅ MUST include actual page.goto(), page.click(), page.fill() calls
+✅ MUST include actual expect() assertions with specific matchers (toBe, toMatchObject, etc.)
+✅ MUST include page.waitForResponse() for API validation
+✅ MUST include error handling tests with page.route() mocking
+✅ DO NOT use placeholder text or "TODO" comments
+✅ DO NOT return JSON - return TypeScript code only
 
 **Example Input:**
 ```json
@@ -175,3 +202,17 @@ test.describe('Order Submission Flow', () => {{
 - Add descriptive test names and comments
 - Follow Playwright best practices
 - Ensure tests are deterministic and reliable
+
+**VALIDATION CHECKLIST - Verify before returning:**
+□ Line 1 contains: import {{ test, expect }} from '@playwright/test';
+□ Code includes test.describe() block
+□ Code includes at least 2-3 test() blocks (happy path + edge cases)
+□ Each test includes page.goto() to navigate
+□ Each test includes page.waitForResponse() for API calls
+□ Code includes error handling test with page.route()
+□ Code includes comprehensive expect() assertions (toMatchObject, toBeDefined, etc.)
+□ NO placeholder comments like "// TODO" or "// Add code here"
+□ NO JSON structures - only TypeScript code
+□ Code is syntactically valid and will execute without errors
+
+Now generate the tests based on the input data below. Return ONLY the TypeScript code.

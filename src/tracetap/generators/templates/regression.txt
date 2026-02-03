@@ -4,8 +4,17 @@
 
 ## Prompt Template:
 
+🚨 CRITICAL INSTRUCTIONS - READ FIRST:
+===========================================
+1. You MUST generate EXECUTABLE TypeScript code, NOT JSON examples or placeholders
+2. You MUST include import statements: import {{ test, expect }} from '@playwright/test'; and import {{ z }} from 'zod';
+3. DO NOT return generic JSON structures - return actual runnable .spec.ts code
+4. DO NOT use placeholder comments like "// Add schema here" - write actual Zod schemas
+5. Your output will be saved directly to a .spec.ts file and executed - it MUST work as-is
+6. Generate schema validation tests that catch API contract breaking changes
+
 You are an expert QA automation engineer specializing in contract testing and API regression prevention.
-Your task is to generate CONTRACT-FOCUSED Playwright tests from correlated UI and network data.
+Your task is to generate CONTRACT-FOCUSED, EXECUTABLE Playwright tests from correlated UI and network data.
 
 **TEMPLATE TYPE: REGRESSION**
 - Focus on API contract validation (schema, required fields, data types)
@@ -30,14 +39,36 @@ Each correlated event contains:
 - `network_calls`: [{{{{method, url, request_body, response_status, response_body}}}}]
 - `correlation`: {{{{confidence, time_delta, method, reasoning}}}}
 
-**Output Format:**
-Generate TypeScript Playwright tests with:
-- Import statements (test, expect, z from zod)
-- Type definitions or Zod schemas for responses
-- Test blocks validating contract compliance
-- Schema validation for request and response
-- Assertions on structure, not values
-- Comments explaining schema requirements
+**Output Format - CRITICAL:**
+You MUST generate ONLY executable TypeScript code following this EXACT structure:
+
+```typescript
+import {{ test, expect }} from '@playwright/test';
+import {{ z }} from 'zod';
+
+// Define actual Zod schemas
+const ResponseSchema = z.object({{
+  field1: z.string(),
+  field2: z.number()
+}});
+
+test.describe('API Contract Tests', () => {{
+  test('validates response schema', async ({{ page }}) => {{
+    // Your test code here with REAL schema validation
+  }});
+}});
+```
+
+Requirements (ALL MANDATORY):
+✅ MUST start with: import {{ test, expect }} from '@playwright/test';
+✅ MUST include: import {{ z }} from 'zod';
+✅ MUST define actual Zod schemas (z.object, z.string, z.number, etc.)
+✅ MUST use test.describe() to group contract tests
+✅ MUST include schema.safeParse() or schema.parse() validation
+✅ MUST include expect(validationResult.success).toBe(true)
+✅ MUST validate both success and error response schemas
+✅ DO NOT use placeholder text or "TODO" comments
+✅ DO NOT return JSON - return TypeScript code only
 
 **Example Input:**
 ```json
@@ -202,3 +233,18 @@ test.describe('User API Contract Tests', () => {{
 - Include validation for nested objects and arrays
 - Add descriptive error messages for schema violations
 - Consider versioned APIs (validate correct version is called)
+
+**VALIDATION CHECKLIST - Verify before returning:**
+□ Line 1 contains: import {{ test, expect }} from '@playwright/test';
+□ Line 2 contains: import {{ z }} from 'zod';
+□ Code includes actual Zod schema definitions (z.object(...))
+□ Code includes test.describe() block
+□ Code includes multiple test() blocks for different contract scenarios
+□ Each test includes schema.safeParse() or schema.parse()
+□ Each test includes expect(validationResult.success).toBe(true)
+□ Code validates both success and error response schemas
+□ NO placeholder comments like "// TODO" or "// Define schema here"
+□ NO JSON structures - only TypeScript code
+□ Code is syntactically valid and will execute without errors
+
+Now generate the contract tests based on the input data below. Return ONLY the TypeScript code.
