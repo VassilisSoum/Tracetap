@@ -8,12 +8,104 @@
 
 [![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.0.0-brightgreen.svg)](https://github.com/VassilisSoum/tracetap/releases)
+[![Version](https://img.shields.io/badge/version-2.2.0-brightgreen.svg)](https://github.com/VassilisSoum/tracetap/releases)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/VassilisSoum/tracetap/actions)
 
 [Quick Start](#quick-start) | [What Makes TraceTap Special](#what-makes-tracetap-special) | [Features](#key-features) | [Documentation](#documentation)
 
 </div>
+
+---
+
+## ✨ What's New in v2.2.0
+
+**🎨 Professional CLI Experience** - Enhanced user experience improvements:
+
+### 1. Better Error Messages
+- ✅ **Clear, Actionable Errors**: Each error includes specific suggestions for resolution
+- ✅ **7 Custom Error Types**: APIKeyMissing, InvalidSession, CorruptFile, PortConflict, Certificate, BrowserLaunch, Network
+- ✅ **Documentation Links**: Errors link directly to relevant docs for quick fixes
+- ✅ **Helpful Context**: Errors explain what went wrong AND how to fix it
+
+### 2. Rich Progress Indicators
+- ⏱️ **Live Recording Status**: See elapsed time and event count in real-time
+- ⏱️ **Progress Bars**: Visual feedback during correlation and test generation
+- ⏱️ **Smart Spinners**: Indeterminate progress for AI operations
+- ⏱️ **Professional Output**: Color-coded, formatted terminal output
+
+### 3. Color-Coded Output
+- 🎨 **Consistent Colors**: Green for success, yellow for warnings, red for errors
+- 🎨 **Rich Formatting**: Section headers, panels, and formatted tables
+- 🎨 **Context Highlighting**: File paths and commands stand out
+- 🎨 **Clean UX**: Professional CLI experience on par with modern tools
+
+See [CHANGELOG](CHANGELOG.md) for full v2.2.0 details.
+
+---
+
+## ✨ What's New in v2.1.0
+
+**🔒 Security, 🎯 Performance, 📁 Organization, 🔄 Variations** - Major feature additions:
+
+### 1. PII Sanitization (Security Critical)
+- ✅ **Automatic PII Redaction**: Passwords, emails, SSNs, credit cards, API keys automatically sanitized before sending to AI
+- ✅ **Default ON**: Privacy-first design with `--no-sanitize` opt-out (not recommended)
+- ✅ **GDPR/CCPA/HIPAA Friendly**: Helps meet compliance requirements
+- ✅ **Structure Preserving**: Maintains data types and lengths for test validity
+
+### 2. Performance Assertions (`--performance`)
+- ⏱️ **Auto-Generated Timing Tests**: Extracts duration from recordings and adds timing assertions
+- ⏱️ **Smart Thresholds**: 1.5x observed duration, bounded by min/max
+- ⏱️ **Zero Configuration**: Works with existing recordings (duration already captured!)
+- ⏱️ **Catch Regressions**: Automatically detect performance degradation
+
+### 3. Smart Test Organization (`--organize`)
+- 📁 **Feature-Based Directories**: Tests organized into `auth/`, `users/`, `orders/`, etc.
+- 📁 **Endpoint Grouping**: Groups tests by normalized API endpoints
+- 📁 **Clean Structure**: No more monolithic test files
+- 📁 **Maintainable**: Easy to find and update tests
+
+### 4. Test Data Variations (`--variations N`)
+- 🔄 **AI-Powered Variations**: Generate N test files with different input data
+- 🔄 **5 Variation Types**: Happy path, edge cases, boundaries, errors, security tests
+- 🔄 **Context-Aware**: Understands email vs phone vs password fields
+- 🔄 **Complete Coverage**: From XSS to empty strings in one command
+
+### All Features Work Together
+```bash
+# Generate organized structure with 5 variations and performance tests
+tracetap-generate-tests session -o tests/ \
+  --variations 5 \
+  --performance \
+  --organize
+
+# Output:
+# tests/
+#   auth/
+#     login-variation-1.spec.ts  (happy path + timing)
+#     login-variation-2.spec.ts  (edge cases + timing)
+#     login-variation-3.spec.ts  (boundaries + timing)
+#     login-variation-4.spec.ts  (errors + timing)
+#     login-variation-5.spec.ts  (security + timing)
+#   users/
+#     get-variation-1.spec.ts
+#     ...
+```
+
+See [CHANGELOG](CHANGELOG.md) for full v2.1.0 details.
+
+---
+
+## ✨ What's New in v2.0.0
+
+**Optimized AI Test Generation** - Major improvements to test generation quality:
+- ✅ **>80% Success Rate**: Validated against 15+ real-world scenarios
+- ✅ **Better Code Quality**: Generates executable TypeScript tests with proper imports
+- ✅ **Production Ready**: Minimal manual editing required
+- ✅ **Three Templates**: Basic (quick tests), Comprehensive (production), Regression (contract testing)
+
+**Before v2.0.0**: AI sometimes generated JSON placeholders requiring manual fixes
+**After v2.0.0**: Consistent, executable Playwright tests ready to run
 
 ---
 
@@ -642,7 +734,7 @@ TraceTap is MIT licensed. See [LICENSE](LICENSE) for details.
 
 TraceTap is actively maintained and used in production by QA teams worldwide.
 
-**Current version:** 1.0.0
+**Current version:** 2.2.0
 **Python support:** 3.8, 3.9, 3.10, 3.11, 3.12
 **License:** MIT
 **Status:** Production Ready

@@ -29,6 +29,16 @@ Your task is to generate SIMPLE, focused, EXECUTABLE Playwright tests from corre
 5. Include clear comments for each step
 6. Keep test structure simple and flat (avoid complex nesting)
 
+**Performance Assertions (when enabled):**
+When performance thresholds are provided below, add timing assertions to your tests:
+
+```typescript
+const startTime = Date.now();
+const response = await page.waitForResponse(url => url.includes('/api/endpoint'));
+const duration = Date.now() - startTime;
+expect(duration).toBeLessThan(threshold_ms); // Observed Xms during recording
+```
+
 **Input Format:**
 Each correlated event contains:
 - `ui_event`: {{{{type, timestamp, selector, value}}}}

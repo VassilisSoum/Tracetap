@@ -33,6 +33,16 @@ Your task is to generate COMPREHENSIVE, production-ready, EXECUTABLE Playwright 
 7. Add descriptive comments for complex logic
 8. Consider accessibility selectors (role, label)
 
+**Performance Assertions (when enabled):**
+When performance thresholds are provided below, add timing assertions to your tests:
+
+```typescript
+const startTime = Date.now();
+const response = await page.waitForResponse(url => url.includes('/api/endpoint'));
+const duration = Date.now() - startTime;
+expect(duration).toBeLessThan(threshold_ms); // Observed Xms during recording
+```
+
 **Input Format:**
 Each correlated event contains:
 - `ui_event`: {{{{type, timestamp, selector, value}}}}
