@@ -23,6 +23,24 @@ from ..record.correlator import (
     NetworkRequest,
 )
 from ..record.parser import TraceTapEvent, EventType
+from ..common.errors import (
+    APIKeyMissingError,
+    InvalidSessionError,
+    CorruptFileError,
+    handle_common_errors,
+)
+from ..common.output import (
+    console,
+    success,
+    error,
+    warning,
+    info,
+    section_header,
+    generation_progress,
+    print_summary,
+    print_next_steps,
+    format_path,
+)
 
 # Import version
 try:
@@ -123,6 +141,10 @@ async def generate_tests_from_session(
     base_url: Optional[str],
     verbose: bool,
     dry_run: bool = False,
+    sanitize_pii: bool = True,
+    add_performance: bool = False,
+    organize: bool = False,
+    variations_count: int = 0,
 ) -> int:
     """Generate tests from a recorded session.
 
@@ -136,29 +158,26 @@ async def generate_tests_from_session(
         base_url: Base URL for tests
         verbose: Enable verbose logging
         dry_run: Show what would be done without actually generating
+        sanitize_pii: Enable PII sanitization before sending to AI
+        add_performance: Add performance/timing assertions to tests
+        organize: Organize tests into logical directory structure
+        variations_count: Number of test variations to generate (0=disabled)
 
     Returns:
         Exit code (0=success, 1=error)
     """
     # Load correlation result
-    print(f"📂 Loading session from {session_dir}...")
+    console.print()
+    section_header("Loading Session")
+    info(f"Loading session: {format_path(str(session_dir))}")
+
     correlation_file = session_dir / "correlation.json"
 
     if not correlation_file.exists():
-        print(f"❌ Error: No correlation file found at {correlation_file}")
-        print(f"💡 Available sessions in ./recordings:")
-        recordings_dir = Path("./recordings")
-        if recordings_dir.exists():
-            sessions = [d.name for d in recordings_dir.iterdir() if d.is_dir()]
-            if sessions:
-                for session in sessions[:5]:
-                    print(f"   • {session}")
-            else:
-                print("   (none)")
-        else:
-            print("   (no recordings directory)")
-        print(f"\n💡 Did you run 'tracetap record' first?")
-        return 1
+        raise InvalidSessionError(
+            str(session_dir),
+            f"Missing correlation.json file"
+        )
 
     try:
         correlation_result = load_correlation_result(correlation_file)
@@ -166,113 +185,307 @@ async def generate_tests_from_session(
         correlation_rate = correlation_result.stats.get("correlation_rate", 0) * 100
         avg_confidence = correlation_result.stats.get("average_confidence", 0) * 100
 
-        print(f"✅ Loaded {event_count} correlated events")
-        print(f"   Correlation rate: {correlation_rate:.1f}%")
-        print(f"   Average confidence: {avg_confidence:.1f}%")
+        success(f"Loaded {event_count} correlated events")
+        console.print(f"   • Correlation rate: [bold]{correlation_rate:.1f}%[/bold]")
+        console.print(f"   • Average confidence: [bold]{avg_confidence:.1f}%[/bold]")
 
         if event_count == 0:
-            print(f"\n⚠️ Warning: No correlated events found")
-            print(f"💡 Try re-recording with adjusted parameters:")
-            print(f"   • Increase --window-ms to capture more events")
-            print(f"   • Lower --min-confidence threshold")
+            warning("No correlated events found")
+            info("Try re-recording with adjusted parameters:")
+            console.print("   • Increase --window-ms to capture more events")
+            console.print("   • Lower --min-confidence threshold")
+            return 1
+    except json.JSONDecodeError as e:
+        raise CorruptFileError(
+            str(correlation_file),
+            f"Invalid JSON at line {e.lineno}: {e.msg}"
+        )
     except Exception as e:
-        print(f"❌ Error loading correlation data: {e}")
+        error(f"Error loading correlation data: {e}")
         if verbose:
             import traceback
-
             traceback.print_exc()
         return 1
 
     # Dry-run mode
     if dry_run:
-        print(f"\n📋 Dry-run Mode - Configuration Check\n")
-        print(f"  Session: {session_dir}")
-        print(f"  Output: {output_file.absolute()}")
-        print(f"  Template: {template}")
-        print(f"  Format: {output_format}")
-        print(f"  Confidence threshold: {confidence_threshold}")
+        console.print()
+        section_header("Dry-run Mode - Configuration Check")
+        console.print(f"  Session: {format_path(str(session_dir))}")
+        console.print(f"  Output: {format_path(str(output_file.absolute()))}")
+        console.print(f"  Template: [bold]{template}[/bold]")
+        console.print(f"  Format: [bold]{output_format}[/bold]")
+        console.print(f"  Confidence threshold: [bold]{confidence_threshold}[/bold]")
         if base_url:
-            print(f"  Base URL: {base_url}")
-        print(f"\n✓ Configuration is valid (no tests generated)\n")
+            console.print(f"  Base URL: [bold]{base_url}[/bold]")
+        console.print()
+        success("Configuration is valid (no tests generated)")
         return 0
 
+    # Check API key
+    if not api_key and not os.getenv("ANTHROPIC_API_KEY"):
+        raise APIKeyMissingError()
+
     # Initialize generator
-    print(f"\n🤖 Initializing AI test generator...")
+    console.print()
+    section_header("Initializing Generator")
+    if not sanitize_pii:
+        warning("PII sanitization is DISABLED - sensitive data will be sent to AI")
+    else:
+        info("PII sanitization enabled (default)")
+
     try:
-        generator = TestGenerator(api_key=api_key)
+        generator = TestGenerator(api_key=api_key, sanitize_pii=sanitize_pii)
+        success("Generator initialized successfully")
     except Exception as e:
-        print(f"❌ Error initializing generator: {e}")
-        print(f"💡 Make sure your API key is valid:")
-        print(f"   • Set ANTHROPIC_API_KEY environment variable")
-        print(f"   • Or use --api-key parameter")
+        error(f"Failed to initialize generator: {e}")
+        if "api" in str(e).lower() or "key" in str(e).lower():
+            raise APIKeyMissingError()
         if verbose:
             import traceback
-
             traceback.print_exc()
         return 1
 
     # Generate tests
-    print(f"✨ Generating {template} tests...")
-    print(f"   Output format: {output_format}")
-    print(f"   Confidence threshold: {confidence_threshold}")
+    console.print()
+    section_header("Generating Tests")
+    info(f"Template: [bold]{template}[/bold]")
+    info(f"Output format: [bold]{output_format}[/bold]")
+    info(f"Confidence threshold: [bold]{confidence_threshold}[/bold]")
+
+    # Extract performance thresholds if enabled
+    performance_thresholds = None
+    if add_performance:
+        from ..generators.performance_analyzer import PerformanceAnalyzer
+
+        perf_analyzer = PerformanceAnalyzer()
+        performance_thresholds = perf_analyzer.extract_thresholds(
+            correlation_result.correlated_events
+        )
+        if performance_thresholds:
+            stats = perf_analyzer.get_statistics(performance_thresholds)
+            info(f"Performance: [bold]{stats['count']}[/bold] thresholds extracted")
+            console.print(f"   • Average duration: [bold]{stats['avg_duration_ms']}ms[/bold]")
 
     options = GenerationOptions(
         template=template,
         output_format=output_format,
         confidence_threshold=confidence_threshold,
         base_url=base_url,
+        performance_thresholds=performance_thresholds,
     )
 
-    try:
-        test_code = await generator.generate_tests(correlation_result, options)
-    except Exception as e:
-        print(f"\n❌ Error generating tests: {e}")
-        print(f"💡 Troubleshooting:")
-        print(f"   • Check your API key is valid")
-        print(f"   • Check your network connection")
-        print(f"   • Try a simpler template (basic)")
-        if verbose:
-            import traceback
+    # Generate test variations if requested
+    variations = []
+    if variations_count > 0:
+        from ..generators.variation_generator import VariationGenerator
 
-            traceback.print_exc()
-        return 1
+        var_gen = VariationGenerator(api_key=api_key)
+        console.print()
+        info(f"Generating [bold]{variations_count}[/bold] test variations...")
 
-    # Save to file
-    output_file.parent.mkdir(parents=True, exist_ok=True)
-    output_file.write_text(test_code)
+        with generation_progress("Creating variations...") as progress:
+            task = progress.add_task("Creating variations...", total=None)
+            variations = var_gen.generate_variations(
+                correlation_result.correlated_events, count=variations_count
+            )
+            progress.update(task, description=f"Created {len(variations)} variations")
 
-    # Display statistics
-    lines = test_code.count("\n")
-    file_size = len(test_code)
-
-    print(f"\n✅ Tests generated successfully!")
-    print(f"   📝 Output file: {output_file}")
-    print(f"   📊 Statistics:")
-    print(f"      • Lines: {lines}")
-    print(f"      • Size: {file_size} bytes")
-    print(f"      • Template: {template}")
-    print(f"\n💡 Next steps:")
-    print(f"   1. Review the generated test:")
-    print(f"      cat {output_file}")
-
-    if output_format in ["typescript", "javascript"]:
-        print(f"\n   2. Install Playwright (if needed):")
-        print(f"      npm install -D @playwright/test")
-        print(f"\n   3. Run tests:")
-        print(f"      npx playwright test {output_file}")
+        success(f"Created {len(variations)} variations")
+        for var in variations:
+            console.print(f"   • Variation {var.variation_number}: {var.description}")
     else:
-        print(f"\n   2. Install pytest (if needed):")
-        print(f"      pip install pytest")
-        print(f"\n   3. Run tests:")
-        print(f"      pytest {output_file}")
+        # No variations - use original events
+        from ..generators.variation_generator import TestVariation, VariationType
 
-    print(f"\n🔗 Resources:")
-    print(f"   • Playwright docs: https://playwright.dev")
-    print(f"   • TraceTap docs: https://github.com/VassilisSoum/tracetap")
+        variations = [
+            TestVariation(
+                variation_number=1,
+                variation_type=VariationType.HAPPY_PATH,
+                description="Original recording",
+                modified_events=correlation_result.correlated_events,
+                expected_outcome="success",
+            )
+        ]
+
+    # Generate tests (organized or single file)
+    if organize:
+        from ..generators.file_organizer import FileOrganizer
+        from ..record.correlator import CorrelationResult as CR
+
+        total_files = 0
+        total_lines = 0
+
+        # Generate for each variation
+        for variation in variations:
+            organizer = FileOrganizer()
+            file_specs = organizer.organize(
+                variation.modified_events, output_file.parent
+            )
+
+            stats = organizer.get_statistics(file_specs)
+            variation_suffix = (
+                f"-variation-{variation.variation_number}"
+                if variations_count > 0
+                else ""
+            )
+
+            console.print()
+            info(f"Organizing variation {variation.variation_number} into [bold]{len(file_specs)}[/bold] files:")
+            console.print(f"   {variation.description}")
+            console.print(f"   Features: {', '.join(stats['features'])}")
+
+            with generation_progress(f"Generating organized tests...") as progress:
+                task = progress.add_task(
+                    f"Generating {len(file_specs)} test files...",
+                    total=len(file_specs)
+                )
+
+                for spec in file_specs:
+                    # Create CorrelationResult for this file's events
+                    file_correlation_result = CR(
+                        correlated_events=spec.events, stats=correlation_result.stats
+                    )
+
+                    try:
+                        test_code = await generator.generate_tests(
+                            file_correlation_result, options
+                        )
+                    except Exception as e:
+                        error(f"Error generating {spec.relative_path}: {e}")
+                        if verbose:
+                            import traceback
+                            traceback.print_exc()
+                        progress.update(task, advance=1)
+                        continue
+
+                    # Write to organized path with variation suffix
+                    relative_dir = spec.relative_path.parent
+                    filename = spec.relative_path.stem + variation_suffix + spec.relative_path.suffix
+                    full_path = output_file.parent / relative_dir / filename
+                    full_path.parent.mkdir(parents=True, exist_ok=True)
+                    full_path.write_text(test_code)
+
+                    lines = test_code.count("\n")
+                    total_lines += lines
+                    total_files += 1
+                    progress.update(task, advance=1)
+
+        # Print organized test summary
+        console.print()
+        print_summary(
+            "Tests Generated Successfully",
+            [
+                ("Variations", str(len(variations))),
+                ("Total files", str(total_files)),
+                ("Total lines", str(total_lines)),
+                ("Template", template),
+            ],
+        )
+
+    else:
+        # Single file output (original behavior) - iterate through variations
+        from ..record.correlator import CorrelationResult as CR
+
+        total_lines = 0
+        files_written = []
+
+        with generation_progress("Generating test files...") as progress:
+            task = progress.add_task(
+                f"Generating {len(variations)} test file(s)...",
+                total=len(variations)
+            )
+
+            for variation in variations:
+                # Create CorrelationResult for this variation's events
+                var_correlation_result = CR(
+                    correlated_events=variation.modified_events,
+                    stats=correlation_result.stats,
+                )
+
+                try:
+                    test_code = await generator.generate_tests(var_correlation_result, options)
+                except Exception as e:
+                    error(f"Error generating variation {variation.variation_number}: {e}")
+                    info("Troubleshooting:")
+                    console.print("   • Check your API key is valid")
+                    console.print("   • Check your network connection")
+                    console.print("   • Try a simpler template (basic)")
+                    if verbose:
+                        import traceback
+                        traceback.print_exc()
+                    progress.update(task, advance=1)
+                    continue
+
+                # Determine output path (add variation suffix if multiple variations)
+                if variations_count > 0:
+                    var_output = (
+                        output_file.parent
+                        / f"{output_file.stem}-variation-{variation.variation_number}{output_file.suffix}"
+                    )
+                else:
+                    var_output = output_file
+
+                # Save to file
+                var_output.parent.mkdir(parents=True, exist_ok=True)
+                var_output.write_text(test_code)
+
+                lines = test_code.count("\n")
+                total_lines += lines
+                files_written.append((var_output, lines, variation.description))
+                progress.update(task, advance=1)
+
+        # Display statistics
+        console.print()
+        if variations_count > 0:
+            files_list = [
+                (str(file_path), lines, desc)
+                for file_path, lines, desc in files_written
+            ]
+            print_summary(
+                "Tests Generated Successfully",
+                [
+                    ("Variations", str(len(files_written))),
+                    ("Total lines", str(total_lines)),
+                    ("Template", template),
+                ],
+                files=files_list,
+            )
+        else:
+            print_summary(
+                "Tests Generated Successfully",
+                [
+                    ("Output", format_path(str(output_file))),
+                    ("Lines", str(total_lines)),
+                    ("Template", template),
+                ],
+            )
+    # Next steps
+    if output_format in ["typescript", "javascript"]:
+        steps = [
+            f"Review the generated test: {format_command(f'cat {output_file}')}",
+            f"Install Playwright (if needed): {format_command('npm install -D @playwright/test')}",
+            f"Run tests: {format_command(f'npx playwright test {output_file}')}",
+        ]
+    else:
+        steps = [
+            f"Review the generated test: {format_command(f'cat {output_file}')}",
+            f"Install pytest (if needed): {format_command('pip install pytest')}",
+            f"Run tests: {format_command(f'pytest {output_file}')}",
+        ]
+
+    print_next_steps(steps)
+
+    # Resources
+    console.print("🔗 Resources:")
+    console.print("   • Playwright docs: https://playwright.dev")
+    console.print("   • TraceTap docs: https://github.com/VassilisSoum/tracetap")
+    console.print()
 
     return 0
 
 
+@handle_common_errors
 def main() -> int:
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -362,6 +575,32 @@ Troubleshooting:
     )
 
     parser.add_argument(
+        "--no-sanitize",
+        action="store_true",
+        help="Disable PII sanitization (NOT RECOMMENDED - sends raw data to AI)",
+    )
+
+    parser.add_argument(
+        "--performance",
+        action="store_true",
+        help="Add performance/timing assertions to generated tests",
+    )
+
+    parser.add_argument(
+        "--organize",
+        action="store_true",
+        help="Organize tests into logical directory structure by endpoint/feature",
+    )
+
+    parser.add_argument(
+        "--variations",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Generate N test variations (1=happy path, 2-N=edge cases/errors)",
+    )
+
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Show what would be done without actually generating tests",
@@ -383,29 +622,17 @@ Troubleshooting:
 
     # Validation
     if not args.session.exists():
-        print(f"❌ Error: Session directory not found: {args.session}")
-        print(f"💡 Available sessions in ./recordings:")
-        recordings_dir = Path("./recordings")
-        if recordings_dir.exists():
-            sessions = [d.name for d in recordings_dir.iterdir() if d.is_dir()]
-            if sessions:
-                for session in sessions[:5]:
-                    print(f"   • {session}")
-            else:
-                print("   (no sessions yet)")
-        else:
-            print("   (no recordings directory)")
-        return 1
+        raise InvalidSessionError(str(args.session), "Directory does not exist")
 
     if not args.session.is_dir():
-        print(f"❌ Error: Not a directory: {args.session}")
-        print(f"💡 Please provide the path to a session directory")
-        return 1
+        raise InvalidSessionError(str(args.session), "Path is not a directory")
 
     if args.min_confidence < 0 or args.min_confidence > 1:
-        print(f"❌ Error: --min-confidence must be between 0.0 and 1.0")
-        print(f"💡 Try: --min-confidence 0.5 (default) or 0.8 (stricter)")
-        return 1
+        from ..common.errors import TraceTapError
+        raise TraceTapError(
+            message="--min-confidence must be between 0.0 and 1.0",
+            suggestion="Try: --min-confidence 0.5 (default) or 0.8 (stricter)"
+        )
 
     # Check for API key (not needed for dry-run)
     api_key = args.api_key
@@ -413,12 +640,7 @@ Troubleshooting:
         if not api_key:
             api_key = os.environ.get("ANTHROPIC_API_KEY")
             if not api_key:
-                print("❌ Error: Anthropic API key required")
-                print("💡 Set it in one of two ways:")
-                print("   1. Environment variable: export ANTHROPIC_API_KEY=sk-ant-...")
-                print("   2. Command argument: --api-key sk-ant-...")
-                print("\n🔗 Get your API key at: https://console.anthropic.com/")
-                return 1
+                raise APIKeyMissingError()
 
     # Run generation
     try:
@@ -433,17 +655,21 @@ Troubleshooting:
                 base_url=args.base_url,
                 verbose=args.verbose,
                 dry_run=args.dry_run,
+                sanitize_pii=not args.no_sanitize,  # Default: sanitize ON
+                add_performance=args.performance,
+                organize=args.organize,
+                variations_count=args.variations,
             )
         )
     except KeyboardInterrupt:
-        print("\n\n⚠️ Interrupted by user")
+        console.print("\n")
+        warning("Operation interrupted by user")
         return 130
     except Exception as e:
-        print(f"\n❌ Unexpected error: {e}")
-        print(f"💡 Enable verbose mode for more details: -v")
+        error(f"Unexpected error: {e}")
+        info("Enable verbose mode for more details: -v")
         if args.verbose:
             import traceback
-
             traceback.print_exc()
         return 1
 
