@@ -143,6 +143,9 @@ class VariationGenerator:
             VariationType.SECURITY,
         ]
 
+        # Track failures for reporting
+        failed_variations = []
+
         for i in range(1, count):
             variation_type = variation_types[(i - 1) % len(variation_types)]
 
@@ -153,7 +156,28 @@ class VariationGenerator:
                 variations.append(variation)
             except Exception as e:
                 logger.error(f"Failed to generate variation {i + 1}: {e}")
+                failed_variations.append((i + 1, variation_type.value, str(e)))
                 # Continue with next variation
+
+        # Report failures at end
+        if failed_variations:
+            failed_ids = [f"#{fid}" for fid, _, _ in failed_variations]
+            logger.warning(
+                f"Failed to generate {len(failed_variations)} of {count} variations: "
+                f"{', '.join(failed_ids)}"
+            )
+
+            # Raise error if more than half failed
+            if len(failed_variations) > count / 2:
+                failure_details = '\n'.join(
+                    f"  - Variation {fid} ({vtype}): {error[:100]}"
+                    for fid, vtype, error in failed_variations
+                )
+                raise ValueError(
+                    f"More than half of variations failed to generate "
+                    f"({len(failed_variations)}/{count}).\n"
+                    f"Failures:\n{failure_details}"
+                )
 
         return variations
 

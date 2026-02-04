@@ -4,6 +4,7 @@ Provides color-coded messages, progress indicators, and formatted output
 for a professional CLI experience.
 """
 
+from threading import Lock
 from rich.console import Console
 from rich.progress import (
     Progress,
@@ -126,27 +127,48 @@ def generation_progress(description: str = "Generating tests..."):
 def recording_progress():
     """Live progress display during recording.
 
+    Thread-safe event counter with live display updates.
+
     Yields:
-        Dictionary with 'count' key to track event count
+        Dictionary with 'count' key and 'increment()' method
 
     Example:
         with recording_progress() as counter:
             for event in events:
-                counter['count'] += 1
+                counter['increment']()  # Thread-safe increment
                 # ... process event ...
+
+        # Backward compatible: counter['count'] += 1 still works
+        # but is not thread-safe
     """
     table = Table.grid(padding=(0, 2))
     table.add_column(style="cyan", no_wrap=True)
     table.add_column(style="white")
 
     start_time = time.time()
+    lock = Lock()
     event_count = {"count": 0}
+
+    def increment():
+        """Thread-safe increment of event count."""
+        with lock:
+            event_count["count"] += 1
+
+    def get_count():
+        """Thread-safe read of event count."""
+        with lock:
+            return event_count["count"]
+
+    # Add thread-safe methods to the dictionary
+    event_count["increment"] = increment
+    event_count["get_count"] = get_count
 
     def update_table():
         table.rows.clear()
         elapsed = time.time() - start_time
+        count = get_count()  # Thread-safe read
         table.add_row("⏱️  Elapsed:", f"{elapsed:.1f}s")
-        table.add_row("📋 Events:", str(event_count["count"]))
+        table.add_row("📋 Events:", str(count))
         table.add_row("🌐 Status:", "[green]Recording...[/green]")
         return table
 
@@ -154,8 +176,9 @@ def recording_progress():
         yield event_count
         table.rows.clear()
         elapsed = time.time() - start_time
+        count = get_count()  # Thread-safe read
         table.add_row("⏱️  Elapsed:", f"{elapsed:.1f}s")
-        table.add_row("📋 Events:", str(event_count["count"]))
+        table.add_row("📋 Events:", str(count))
         table.add_row("🌐 Status:", "[yellow]Stopping...[/yellow]")
         live.update(table)
 
