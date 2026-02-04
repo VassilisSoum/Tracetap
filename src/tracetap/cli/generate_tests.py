@@ -51,6 +51,21 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def _sanitize_api_key(text: str, api_key: Optional[str]) -> str:
+    """Sanitize API key from text for safe logging.
+
+    Args:
+        text: Text that may contain API key
+        api_key: API key to redact (if None, returns text unchanged)
+
+    Returns:
+        Text with API key replaced by [REDACTED_API_KEY]
+    """
+    if not api_key or not text:
+        return text
+    return text.replace(api_key, '[REDACTED_API_KEY]')
+
+
 def load_correlation_result(correlation_file: Path) -> CorrelationResult:
     """Load correlation result from JSON file.
 
@@ -201,10 +216,15 @@ async def generate_tests_from_session(
             f"Invalid JSON at line {e.lineno}: {e.msg}"
         )
     except Exception as e:
-        error(f"Error loading correlation data: {e}")
+        error_msg = _sanitize_api_key(str(e), api_key)
+        error(f"Error loading correlation data: {error_msg}")
         if verbose:
             import traceback
-            traceback.print_exc()
+            import io
+            tb_buffer = io.StringIO()
+            traceback.print_exc(file=tb_buffer)
+            tb_output = _sanitize_api_key(tb_buffer.getvalue(), api_key)
+            console.print(tb_output, style="red dim")
         return 1
 
     # Dry-run mode
@@ -238,12 +258,19 @@ async def generate_tests_from_session(
         generator = TestGenerator(api_key=api_key, sanitize_pii=sanitize_pii)
         success("Generator initialized successfully")
     except Exception as e:
-        error(f"Failed to initialize generator: {e}")
+        # Sanitize API key from error message before logging
+        error_msg = _sanitize_api_key(str(e), api_key)
+        error(f"Failed to initialize generator: {error_msg}")
         if "api" in str(e).lower() or "key" in str(e).lower():
             raise APIKeyMissingError()
         if verbose:
             import traceback
-            traceback.print_exc()
+            import io
+            # Capture and sanitize traceback
+            tb_buffer = io.StringIO()
+            traceback.print_exc(file=tb_buffer)
+            tb_output = _sanitize_api_key(tb_buffer.getvalue(), api_key)
+            console.print(tb_output, style="red dim")
         return 1
 
     # Generate tests
@@ -352,10 +379,15 @@ async def generate_tests_from_session(
                             file_correlation_result, options
                         )
                     except Exception as e:
-                        error(f"Error generating {spec.relative_path}: {e}")
+                        error_msg = _sanitize_api_key(str(e), api_key)
+                        error(f"Error generating {spec.relative_path}: {error_msg}")
                         if verbose:
                             import traceback
-                            traceback.print_exc()
+                            import io
+                            tb_buffer = io.StringIO()
+                            traceback.print_exc(file=tb_buffer)
+                            tb_output = _sanitize_api_key(tb_buffer.getvalue(), api_key)
+                            console.print(tb_output, style="red dim")
                         progress.update(task, advance=1)
                         continue
 
@@ -406,14 +438,19 @@ async def generate_tests_from_session(
                 try:
                     test_code = await generator.generate_tests(var_correlation_result, options)
                 except Exception as e:
-                    error(f"Error generating variation {variation.variation_number}: {e}")
+                    error_msg = _sanitize_api_key(str(e), api_key)
+                    error(f"Error generating variation {variation.variation_number}: {error_msg}")
                     info("Troubleshooting:")
                     console.print("   • Check your API key is valid")
                     console.print("   • Check your network connection")
                     console.print("   • Try a simpler template (basic)")
                     if verbose:
                         import traceback
-                        traceback.print_exc()
+                        import io
+                        tb_buffer = io.StringIO()
+                        traceback.print_exc(file=tb_buffer)
+                        tb_output = _sanitize_api_key(tb_buffer.getvalue(), api_key)
+                        console.print(tb_output, style="red dim")
                     progress.update(task, advance=1)
                     continue
 
@@ -666,11 +703,18 @@ Troubleshooting:
         warning("Operation interrupted by user")
         return 130
     except Exception as e:
-        error(f"Unexpected error: {e}")
+        # Sanitize API key from error (use args.api_key or env var)
+        api_key_to_sanitize = getattr(args, 'api_key', None) or os.environ.get("ANTHROPIC_API_KEY")
+        error_msg = _sanitize_api_key(str(e), api_key_to_sanitize)
+        error(f"Unexpected error: {error_msg}")
         info("Enable verbose mode for more details: -v")
         if args.verbose:
             import traceback
-            traceback.print_exc()
+            import io
+            tb_buffer = io.StringIO()
+            traceback.print_exc(file=tb_buffer)
+            tb_output = _sanitize_api_key(tb_buffer.getvalue(), api_key_to_sanitize)
+            console.print(tb_output, style="red dim")
         return 1
 
 

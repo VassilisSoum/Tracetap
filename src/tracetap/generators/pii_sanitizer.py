@@ -82,8 +82,35 @@ class PIISanitizer:
 
         Args:
             config: Sanitization configuration. If None, uses default settings.
+
+        Raises:
+            ValueError: If custom patterns contain invalid regex
         """
         self.config = config or SanitizationConfig()
+
+        # Validate and compile custom patterns at initialization time
+        if self.config.custom_patterns:
+            for i, pattern in enumerate(self.config.custom_patterns):
+                try:
+                    re.compile(pattern)
+                except re.error as e:
+                    raise ValueError(
+                        f"Invalid custom regex pattern at index {i}: '{pattern}'\n"
+                        f"Regex error: {e}\n"
+                        f"Hint: Ensure pattern uses valid Python regex syntax"
+                    ) from e
+
+        # Pre-compile all patterns for better performance
+        self._compiled_patterns = {
+            name: re.compile(pattern)
+            for name, pattern in self.PATTERNS.items()
+        }
+        if self.config.custom_patterns:
+            self._compiled_custom = [
+                re.compile(p) for p in self.config.custom_patterns
+            ]
+        else:
+            self._compiled_custom = []
 
     def sanitize_event(self, event: Dict[str, Any]) -> Dict[str, Any]:
         """Sanitize a single correlated event.
@@ -132,20 +159,20 @@ class PIISanitizer:
         if self.config.redact_passwords and self._is_password_field(selector):
             return self._redact_with_placeholder(value, 'PASSWORD')
 
-        # Check for email pattern
-        if self.config.redact_emails and re.match(self.PATTERNS['email'], value):
+        # Check for email pattern (use pre-compiled)
+        if self.config.redact_emails and self._compiled_patterns['email'].match(value):
             return '[email protected]'
 
-        # Check for phone pattern
-        if self.config.redact_phone_numbers and re.match(self.PATTERNS['phone'], value):
+        # Check for phone pattern (use pre-compiled)
+        if self.config.redact_phone_numbers and self._compiled_patterns['phone'].match(value):
             return '555-123-4567'
 
-        # Generic PII patterns
+        # Generic PII patterns (use pre-compiled)
         sanitized = value
         if self.config.redact_credit_cards:
-            sanitized = re.sub(self.PATTERNS['credit_card'], '4111-1111-1111-1111', sanitized)
+            sanitized = self._compiled_patterns['credit_card'].sub('4111-1111-1111-1111', sanitized)
         if self.config.redact_ssns:
-            sanitized = re.sub(self.PATTERNS['ssn'], '123-45-6789', sanitized)
+            sanitized = self._compiled_patterns['ssn'].sub('123-45-6789', sanitized)
 
         return sanitized
 
@@ -270,29 +297,24 @@ class PIISanitizer:
 
         sanitized = text
 
-        # Apply enabled pattern replacements
+        # Apply enabled pattern replacements (use pre-compiled patterns for performance)
         if self.config.redact_emails:
-            sanitized = re.sub(self.PATTERNS['email'], '[email protected]', sanitized)
+            sanitized = self._compiled_patterns['email'].sub('[email protected]', sanitized)
         if self.config.redact_api_keys:
-            sanitized = re.sub(self.PATTERNS['api_key'], 'REDACTED_API_KEY', sanitized)
+            sanitized = self._compiled_patterns['api_key'].sub('REDACTED_API_KEY', sanitized)
         if self.config.redact_tokens:
-            sanitized = re.sub(self.PATTERNS['jwt'], 'REDACTED_JWT_TOKEN', sanitized)
-            sanitized = re.sub(self.PATTERNS['bearer_token'], 'Bearer REDACTED_TOKEN', sanitized)
+            sanitized = self._compiled_patterns['jwt'].sub('REDACTED_JWT_TOKEN', sanitized)
+            sanitized = self._compiled_patterns['bearer_token'].sub('Bearer REDACTED_TOKEN', sanitized)
         if self.config.redact_credit_cards:
-            sanitized = re.sub(self.PATTERNS['credit_card'], '4111-1111-1111-1111', sanitized)
+            sanitized = self._compiled_patterns['credit_card'].sub('4111-1111-1111-1111', sanitized)
         if self.config.redact_ssns:
-            sanitized = re.sub(self.PATTERNS['ssn'], '123-45-6789', sanitized)
+            sanitized = self._compiled_patterns['ssn'].sub('123-45-6789', sanitized)
         if self.config.redact_phone_numbers:
-            sanitized = re.sub(self.PATTERNS['phone'], '555-123-4567', sanitized)
+            sanitized = self._compiled_patterns['phone'].sub('555-123-4567', sanitized)
 
-        # Apply custom patterns if provided
-        if self.config.custom_patterns:
-            for pattern in self.config.custom_patterns:
-                try:
-                    sanitized = re.sub(pattern, 'REDACTED_CUSTOM', sanitized)
-                except re.error:
-                    # Skip invalid regex patterns
-                    pass
+        # Apply custom patterns (already validated at init, so no try/except needed)
+        for compiled_pattern in self._compiled_custom:
+            sanitized = compiled_pattern.sub('REDACTED_CUSTOM', sanitized)
 
         return sanitized
 

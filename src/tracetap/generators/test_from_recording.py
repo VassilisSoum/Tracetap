@@ -39,6 +39,8 @@ except ImportError:
     ANTHROPIC_AVAILABLE = False
 
 from ..record.correlator import CorrelationResult, CorrelatedEvent
+from .pii_sanitizer import PIISanitizer, SanitizationConfig
+from ..common.constants import DEFAULT_CLAUDE_MODEL, MAX_GENERATION_TOKENS
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +71,9 @@ class GenerationOptions:
     include_comments: bool = True
     base_url: Optional[str] = None
     test_name: Optional[str] = None
+    sanitize_pii: bool = True  # NEW - default ON for security
+    sanitization_config: Optional[SanitizationConfig] = None  # NEW
+    performance_thresholds: Optional[List] = None  # NEW - performance assertions
 
 
 @dataclass
@@ -279,8 +284,8 @@ class CodeSynthesizer:
 
         try:
             message = self.client.messages.create(
-                model="claude-sonnet-4-5-20250929",
-                max_tokens=4096,
+                model=DEFAULT_CLAUDE_MODEL,
+                max_tokens=MAX_GENERATION_TOKENS,
                 messages=[{"role": "user", "content": prompt}],
             )
 
@@ -464,18 +469,25 @@ class TestGenerator:
         Path("generated.spec.ts").write_text(test_code)
     """
 
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: Optional[str] = None, sanitize_pii: bool = True):
         """Initialize test generator with Claude AI API key.
 
         Args:
             api_key: Claude API key (if not provided, reads from ANTHROPIC_API_KEY env var)
+            sanitize_pii: Enable PII sanitization before sending to AI (default: True)
         """
         self.api_key = api_key
+        self.sanitize_pii = sanitize_pii
+        self.sanitization_config = SanitizationConfig()
+        self.pii_sanitizer = PIISanitizer(self.sanitization_config) if sanitize_pii else None
         self.template_manager = TestTemplate()
         self.synthesizer = CodeSynthesizer(api_key)
         self.templates_dir = Path(__file__).parent / "templates"
 
-        logger.info("TestGenerator initialized")
+        if sanitize_pii:
+            logger.info("TestGenerator initialized with PII sanitization ENABLED")
+        else:
+            logger.warning("TestGenerator initialized with PII sanitization DISABLED - sensitive data will be sent to AI")
 
     async def generate_tests(
         self,
@@ -583,18 +595,26 @@ class TestGenerator:
             base_url=options.base_url or "REPLACE_WITH_YOUR_BASE_URL",
         )
 
+        # Inject performance context if thresholds provided
+        if options.performance_thresholds:
+            from .performance_analyzer import PerformanceAnalyzer
+
+            analyzer = PerformanceAnalyzer()
+            perf_context = analyzer.format_for_prompt(options.performance_thresholds)
+            prompt += f"\n\n{perf_context}\n"
+
         return prompt
 
     def _serialize_event(self, event: CorrelatedEvent) -> Dict[str, Any]:
-        """Convert CorrelatedEvent to JSON-serializable dict.
+        """Convert CorrelatedEvent to JSON-serializable dict with PII sanitization.
 
         Args:
             event: Correlated event
 
         Returns:
-            Dictionary representation
+            Dictionary representation (sanitized if PII sanitization is enabled)
         """
-        return {
+        raw_event = {
             "sequence": event.sequence,
             "ui_event": {
                 "type": getattr(event.ui_event, "type", "unknown"),
@@ -621,6 +641,12 @@ class TestGenerator:
                 "reasoning": event.correlation.reasoning,
             },
         }
+
+        # Apply PII sanitization if enabled (default ON)
+        if self.sanitize_pii and self.pii_sanitizer:
+            return self.pii_sanitizer.sanitize_event(raw_event)
+
+        return raw_event
 
     async def _call_claude_api(self, prompt: str, output_format: str) -> str:
         """Call Claude API to generate test code.

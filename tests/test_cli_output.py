@@ -3,11 +3,6 @@ Tests for CLI output and error handling utilities
 """
 
 import pytest
-from pathlib import Path
-import sys
-
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from tracetap.common.errors import (
     APIKeyMissingError,
