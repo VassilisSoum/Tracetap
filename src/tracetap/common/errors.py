@@ -4,6 +4,8 @@ Provides clear, actionable error messages for common failure scenarios.
 """
 
 import sys
+import functools
+import asyncio
 from pathlib import Path
 from typing import Optional
 
@@ -168,22 +170,34 @@ class NetworkError(TraceTapError):
 
 
 def handle_common_errors(func):
-    """Decorator to catch and format common errors."""
+    """Decorator to catch and format common errors.
 
-    def wrapper(*args, **kwargs):
-        try:
-            return func(*args, **kwargs)
-        except TraceTapError as e:
+    Supports both synchronous and asynchronous functions.
+    Preserves function metadata using functools.wraps.
+
+    Example:
+        @handle_common_errors
+        def my_function():
+            ...
+
+        @handle_common_errors
+        async def my_async_function():
+            ...
+    """
+
+    def _handle_error(e: Exception) -> None:
+        """Common error handling logic."""
+        if isinstance(e, TraceTapError):
             e.print_error()
             sys.exit(1)
-        except FileNotFoundError as e:
+        elif isinstance(e, FileNotFoundError):
             error = InvalidSessionError(
                 str(e.filename) if hasattr(e, "filename") else "unknown",
                 "File not found",
             )
             error.print_error()
             sys.exit(1)
-        except PermissionError as e:
+        elif isinstance(e, PermissionError):
             error = TraceTapError(
                 message=f"Permission denied: {e.filename if hasattr(e, 'filename') else 'unknown'}",
                 suggestion=(
@@ -193,8 +207,26 @@ def handle_common_errors(func):
             )
             error.print_error()
             sys.exit(1)
-        except KeyboardInterrupt:
+        elif isinstance(e, KeyboardInterrupt):
             print("\n\n⚠️  Operation cancelled by user", file=sys.stderr)
             sys.exit(130)
+        else:
+            raise  # Re-raise unexpected exceptions
 
-    return wrapper
+    # Check if function is async
+    if asyncio.iscoroutinefunction(func):
+        @functools.wraps(func)
+        async def async_wrapper(*args, **kwargs):
+            try:
+                return await func(*args, **kwargs)
+            except Exception as e:
+                _handle_error(e)
+        return async_wrapper
+    else:
+        @functools.wraps(func)
+        def sync_wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                _handle_error(e)
+        return sync_wrapper
