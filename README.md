@@ -248,9 +248,20 @@ playwright install chromium
 # Install mitmproxy (for traffic capture)
 pip install mitmproxy
 
+# ⚠️ REQUIRED FOR HTTPS: Install mitmproxy certificate
+# This allows TraceTap to capture encrypted HTTPS traffic
+python -m tracetap.cert_installer install
+
 # Set up Claude AI (for test generation)
 export ANTHROPIC_API_KEY=sk-ant-api03-...
 ```
+
+> **⚠️ HTTPS Certificate Required**
+>
+> Most modern apps use HTTPS. To capture encrypted traffic, you **must** install mitmproxy's certificate before recording.
+> Without this, TraceTap can only capture plain HTTP traffic.
+>
+> **Verify installation:** `python -m tracetap.cert_installer verify`
 
 ### Complete Workflow: Record → Generate → Test
 
@@ -283,6 +294,22 @@ npx playwright test tests/generated.spec.ts
 ```
 
 **That's it! You just went from manual testing to automated Playwright tests in 3 commands.**
+
+#### 🔧 Troubleshooting Common Issues
+
+**Not capturing HTTPS traffic?**
+- ✅ Run `python -m tracetap.cert_installer verify` to check certificate installation
+- ✅ Restart your browser after installing the certificate
+- ✅ Make sure mitmproxy is installed: `pip install mitmproxy`
+
+**Recording session empty or missing API calls?**
+- Check that the app makes network requests during recording
+- Ensure you're interacting with the app before pressing Enter to stop recording
+- For API-only apps, use the legacy proxy mode (see below)
+
+**Need help?** See our [Troubleshooting Guide](docs/troubleshooting.md) or [open an issue](https://github.com/VassilisSoum/tracetap/issues).
+
+---
 
 ### Alternative: API-Only Testing (Legacy)
 
@@ -509,7 +536,16 @@ export ANTHROPIC_API_KEY='sk-ant-...'
 python -c "import anthropic; print('API key configured')"
 ```
 
-### Install Certificate (For HTTPS)
+### Install Certificate (Required for HTTPS)
+
+**Why?** Modern apps use HTTPS encryption. To capture this traffic, mitmproxy needs to act as a trusted "man-in-the-middle" by installing a certificate authority on your system. This is **required** for recording HTTPS traffic.
+
+**What it does:**
+- Installs mitmproxy's CA certificate to your system's trust store
+- Allows TraceTap to decrypt and record HTTPS traffic during recording
+- Only affects your local machine (not production)
+
+**Installation:**
 
 ```bash
 # Linux/macOS
@@ -518,9 +554,11 @@ python -m tracetap.cert_installer install
 # Windows (PowerShell as Admin)
 python -m tracetap.cert_installer install
 
-# Verify
+# Verify installation
 python -m tracetap.cert_installer verify
 ```
+
+**Security Note:** The certificate is only used locally for testing. Remove it when you're done with `python -m tracetap.cert_installer uninstall`.
 
 ---
 
