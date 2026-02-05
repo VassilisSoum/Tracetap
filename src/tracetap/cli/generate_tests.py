@@ -40,6 +40,7 @@ from ..common.output import (
     print_summary,
     print_next_steps,
     format_path,
+    format_command,
 )
 
 # Import version

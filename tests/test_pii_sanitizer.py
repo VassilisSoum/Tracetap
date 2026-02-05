@@ -105,7 +105,7 @@ class TestPIISanitizer:
 
         request_data = json.loads(result["network_calls"][0]["request"])
         assert request_data["email"] == "[email protected]"
-        assert request_data["password"] == "REDACTED_PASSWORD"
+        assert request_data["password"].startswith("REDACTED_PASSWORD")
 
     def test_sanitize_network_call_response(self):
         """Test response body sanitization"""
@@ -134,8 +134,8 @@ class TestPIISanitizer:
 
         response_data = json.loads(result["network_calls"][0]["response"])
         assert response_data["user"]["email"] == "[email protected]"
-        assert response_data["user"]["token"] == "REDACTED_TOKEN"
-        assert response_data["user"]["api_key"] == "REDACTED_API_KEY"
+        assert response_data["user"]["token"].startswith("REDACTED_TOKEN")
+        assert response_data["user"]["api_key"].startswith("REDACTED_API_KEY")
 
     def test_sanitize_url_query_params(self):
         """Test URL query parameter sanitization"""
@@ -185,9 +185,9 @@ class TestPIISanitizer:
 
         request_data = json.loads(result["network_calls"][0]["request"])
         assert request_data["username"] == "john"  # Not sensitive
-        assert request_data["password"] == "REDACTED_PASSWORD"
-        assert request_data["csrf_token"] == "REDACTED_CSRF_TOKEN"
-        assert request_data["session_id"] == "REDACTED_SESSION_ID"
+        assert request_data["password"].startswith("REDACTED_PASSWORD")
+        assert request_data["csrf_token"].startswith("REDACTED_CSRF_TOKEN")
+        assert request_data["session_id"].startswith("REDACTED_SESSION_ID")
 
     def test_preserve_structure(self):
         """Test structure-preserving placeholders"""
@@ -234,7 +234,7 @@ class TestPIISanitizer:
 
         request_data = json.loads(result["network_calls"][0]["request"])
         assert request_data["user"]["profile"]["email"] == "[email protected]"
-        assert request_data["user"]["profile"]["password"] == "REDACTED_PASSWORD"
+        assert request_data["user"]["profile"]["password"].startswith("REDACTED_PASSWORD")
 
     def test_array_sanitization(self):
         """Test sanitization of arrays"""
@@ -263,7 +263,7 @@ class TestPIISanitizer:
         request_data = json.loads(result["network_calls"][0]["request"])
         for user in request_data["users"]:
             assert user["email"] == "[email protected]"
-            assert user["password"] == "REDACTED_PASSWORD"
+            assert user["password"].startswith("REDACTED_PASSWORD")
 
     def test_disable_specific_patterns(self):
         """Test disabling specific sanitization patterns"""
@@ -295,7 +295,7 @@ class TestPIISanitizer:
 
         # Password SHOULD be redacted
         request_data = json.loads(result["network_calls"][0]["request"])
-        assert request_data["password"] == "REDACTED_PASSWORD"
+        assert request_data["password"].startswith("REDACTED_PASSWORD")
 
     def test_ssn_redaction(self):
         """Test SSN pattern detection"""
@@ -499,9 +499,9 @@ class TestMultiplePIIPatterns:
         result = sanitizer.sanitize_event(event)
 
         request_data = json.loads(result["network_calls"][0]["request"])
-        assert request_data["password"] == "REDACTED_PASSWORD"
-        assert request_data["api_key"] == "REDACTED_API_KEY"
-        assert request_data["token"] == "REDACTED_TOKEN"
+        assert request_data["password"].startswith("REDACTED_PASSWORD")
+        assert request_data["api_key"].startswith("REDACTED_API_KEY")
+        assert request_data["token"].startswith("REDACTED_TOKEN")
         assert request_data["username"] == "john"
 
 

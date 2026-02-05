@@ -16,6 +16,11 @@ from src.tracetap.cli.generate_tests import (
     generate_tests_from_session,
     load_correlation_result,
 )
+from src.tracetap.common.errors import (
+    InvalidSessionError,
+    CorruptFileError,
+    APIKeyMissingError,
+)
 from src.tracetap.generators import (
     TestGenerator,
     GenerationOptions,
@@ -574,19 +579,17 @@ async def test_generate_missing_session_dir(tmp_path):
     missing_dir = tmp_path / "nonexistent"
     output_file = tmp_path / "output.spec.ts"
 
-    result = await generate_tests_from_session(
-        session_dir=missing_dir,
-        output_file=output_file,
-        template="comprehensive",
-        output_format="typescript",
-        confidence_threshold=0.5,
-        api_key="test-key",
-        base_url=None,
-        verbose=False,
-    )
-
-    assert result == 1
-    assert not output_file.exists()
+    with pytest.raises(InvalidSessionError):
+        await generate_tests_from_session(
+            session_dir=missing_dir,
+            output_file=output_file,
+            template="comprehensive",
+            output_format="typescript",
+            confidence_threshold=0.5,
+            api_key="test-key",
+            base_url=None,
+            verbose=False,
+        )
 
 
 @pytest.mark.asyncio
@@ -596,19 +599,17 @@ async def test_generate_missing_correlation_file(tmp_path):
     session_dir.mkdir()
     output_file = tmp_path / "output.spec.ts"
 
-    result = await generate_tests_from_session(
-        session_dir=session_dir,
-        output_file=output_file,
-        template="comprehensive",
-        output_format="typescript",
-        confidence_threshold=0.5,
-        api_key="test-key",
-        base_url=None,
-        verbose=False,
-    )
-
-    assert result == 1
-    assert not output_file.exists()
+    with pytest.raises(InvalidSessionError):
+        await generate_tests_from_session(
+            session_dir=session_dir,
+            output_file=output_file,
+            template="comprehensive",
+            output_format="typescript",
+            confidence_threshold=0.5,
+            api_key="test-key",
+            base_url=None,
+            verbose=False,
+        )
 
 
 @pytest.mark.asyncio
@@ -640,19 +641,17 @@ async def test_generate_missing_api_key(sample_session_dir, tmp_path):
     output_file = tmp_path / "output.spec.ts"
 
     with patch.dict("os.environ", {}, clear=True):
-        result = await generate_tests_from_session(
-            session_dir=sample_session_dir,
-            output_file=output_file,
-            template="comprehensive",
-            output_format="typescript",
-            confidence_threshold=0.5,
-            api_key=None,
-            base_url=None,
-            verbose=False,
-        )
-
-        assert result == 1
-        assert not output_file.exists()
+        with pytest.raises(APIKeyMissingError):
+            await generate_tests_from_session(
+                session_dir=sample_session_dir,
+                output_file=output_file,
+                template="comprehensive",
+                output_format="typescript",
+                confidence_threshold=0.5,
+                api_key=None,
+                base_url=None,
+                verbose=False,
+            )
 
 
 @pytest.mark.asyncio
@@ -666,19 +665,17 @@ async def test_generate_invalid_json_in_correlation(tmp_path):
 
     output_file = tmp_path / "output.spec.ts"
 
-    result = await generate_tests_from_session(
-        session_dir=session_dir,
-        output_file=output_file,
-        template="comprehensive",
-        output_format="typescript",
-        confidence_threshold=0.5,
-        api_key="test-key",
-        base_url=None,
-        verbose=False,
-    )
-
-    assert result == 1
-    assert not output_file.exists()
+    with pytest.raises(CorruptFileError):
+        await generate_tests_from_session(
+            session_dir=session_dir,
+            output_file=output_file,
+            template="comprehensive",
+            output_format="typescript",
+            confidence_threshold=0.5,
+            api_key="test-key",
+            base_url=None,
+            verbose=False,
+        )
 
 
 # ============================================================================

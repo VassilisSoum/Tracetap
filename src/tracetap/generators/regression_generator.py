@@ -20,7 +20,7 @@ class VariableExtractor:
 
     # Patterns for detecting dynamic values
     UUID_PATTERN = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', re.IGNORECASE)
-    NUMERIC_ID_PATTERN = re.compile(r'\b\d{6,}\b')  # 6+ digit numbers (likely IDs)
+    NUMERIC_ID_PATTERN = re.compile(r'\b\d{3,}\b')  # 3+ digit numbers (likely IDs)
     TOKEN_PATTERN = re.compile(r'[A-Za-z0-9_-]{20,}')  # Long alphanumeric strings (likely tokens)
     MONGO_ID_PATTERN = re.compile(r'\b[0-9a-f]{24}\b')  # MongoDB ObjectIds
 

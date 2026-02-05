@@ -1,7 +1,0 @@
-{
-  "active": true,
-  "started_at": "2026-02-03T14:50:11.439Z",
-  "original_prompt": "export ANTHROPIC_API_KEY=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 and continue until the end using ralph mode and ultrawork",
-  "reinforcement_count": 10,
-  "last_checked_at": "2026-02-04T17:00:38.522Z"
-}

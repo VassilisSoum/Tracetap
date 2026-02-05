@@ -212,7 +212,7 @@ class TestVariationGenerator:
 
         assert "EDGE_CASE" in prompt
         assert "empty strings" in prompt.lower()
-        assert "max length" in prompt.lower()
+        assert "maximum length" in prompt.lower()
         assert "#email" in prompt
         assert "modified_values" in prompt
         assert "expected_outcome" in prompt

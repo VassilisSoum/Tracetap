@@ -69,8 +69,8 @@ tracetap-record = "tracetap.cli.record:main"
 tracetap-generate-tests = "tracetap.cli.generate_tests:main"
 
 [tool.setuptools]
-packages = ["src.tracetap"]
-package-dir = {"" = "."}
+packages = {find = {where = ["src"]}}
+package-dir = {"" = "src"}
 
 [tool.setuptools.package-data]
 tracetap = ["py.typed"]

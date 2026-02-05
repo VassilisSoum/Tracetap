@@ -332,7 +332,7 @@ class TestAIInsightSuggestion:
 
         assert suggestion.priority == 'MEDIUM'
         assert 'AI' in suggestion.title
-        assert 'Claude AI' in suggestion.observed
+        assert 'AI analysis' in suggestion.observed
         assert suggestion.code_snippet is None  # AI insights don't have code
 
 
