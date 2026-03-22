@@ -172,15 +172,34 @@ class TraceParser:
                         f"Available files: {file_list}"
                     )
 
-                # Extract and parse trace.trace
+                # Extract and parse trace.trace (NDJSON format)
+                # Playwright trace files contain newline-delimited JSON objects
                 with zip_file.open('trace.trace') as trace_file:
-                    trace_data = json.load(trace_file)
-                    return trace_data
+                    actions = []
+                    line_num = 0
+
+                    for line in trace_file:
+                        line_num += 1
+                        line = line.strip()
+                        if not line:
+                            continue
+
+                        try:
+                            obj = json.loads(line)
+                            # Collect action objects for the expected output format
+                            if obj.get('type') == 'action':
+                                actions.append(obj)
+                        except json.JSONDecodeError as e:
+                            logger.warning(
+                                f"⚠️  Skipping malformed JSON at line {line_num}: {e}"
+                            )
+                            continue
+
+                    # Return in expected format for line 138: actions = trace_data.get('actions', [])
+                    return {'actions': actions}
 
         except zipfile.BadZipFile as e:
             raise ValueError(f"Invalid ZIP file: {trace_path}") from e
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Invalid JSON in trace.trace: {e}") from e
 
     def _convert_to_tracetap_events(self, actions: List[Dict[str, Any]]) -> List[TraceTapEvent]:
         """Convert Playwright actions to TraceTap events.

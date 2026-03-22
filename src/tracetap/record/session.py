@@ -41,6 +41,7 @@ import uuid
 import logging
 
 from .recorder import TraceRecorder, RecorderOptions
+from .codegen_recorder import CodegenRecorder, CodegenOptions
 from .parser import TraceParser
 from .correlator import EventCorrelator, CorrelationOptions, load_mitmproxy_traffic
 
@@ -154,9 +155,10 @@ class RecordingSession:
         self.metadata: Optional[SessionMetadata] = None
 
         # Component instances
-        self.recorder: Optional[TraceRecorder] = None
+        self.recorder = None  # Can be TraceRecorder or CodegenRecorder
         self.parser: Optional[TraceParser] = None
         self.correlator: Optional[EventCorrelator] = None
+        self._codegen_events: Optional[List[Dict[str, Any]]] = None  # Store codegen events
 
         # mitmproxy process
         self._mitm_process: Optional[subprocess.Popen] = None
@@ -206,10 +208,24 @@ class RecordingSession:
         # Start mitmproxy for network capture
         self._start_mitmproxy()
 
-        # Start trace recorder with proxy
-        self.recorder = TraceRecorder(self.recorder_options)
+        # Start recorder based on mode
+        recording_mode = self.recorder_options.recording_mode
         proxy_url = f"http://localhost:{self.proxy_port}"
-        await self.recorder.start_recording(url, proxy=proxy_url)
+
+        if recording_mode == "codegen":
+            # Use codegen recorder for manual interaction capture
+            logger.info("📝 Using codegen mode for manual interaction recording")
+            codegen_options = CodegenOptions(
+                viewport_width=self.recorder_options.viewport_width,
+                viewport_height=self.recorder_options.viewport_height,
+            )
+            self.recorder = CodegenRecorder(codegen_options)
+            await self.recorder.start_recording(url, proxy=proxy_url)
+        else:
+            # Use trace recorder (legacy mode)
+            logger.info("🎥 Using trace mode for API call recording")
+            self.recorder = TraceRecorder(self.recorder_options)
+            await self.recorder.start_recording(url, proxy=proxy_url)
 
         logger.info("✅ Recording session started!")
         return self.metadata
@@ -231,9 +247,28 @@ class RecordingSession:
 
         logger.info("⏹️  Stopping recording session...")
 
-        # Stop trace recorder
+        # Stop recorder based on type
         if self.recorder:
-            await self.recorder.stop_recording(str(self.metadata.trace_file))
+            if isinstance(self.recorder, CodegenRecorder):
+                # Codegen recorder returns dict with events and files
+                result = await self.recorder.stop_recording()
+                self._codegen_events = result['events']
+                logger.info(f"   Captured {len(self._codegen_events)} codegen events")
+
+                # Save trace file path if available (for hybrid mode)
+                if result.get('trace_file'):
+                    # Update metadata to point to the trace file from codegen
+                    self.metadata.trace_file = Path(result['trace_file'])
+                    logger.info(f"   Trace file: {self.metadata.trace_file}")
+
+                # Save events to file
+                import json
+                with open(self.metadata.events_file, 'w', encoding='utf-8') as f:
+                    json.dump({'events': self._codegen_events}, f, indent=2)
+            else:
+                # Trace recorder saves trace.zip
+                await self.recorder.stop_recording(str(self.metadata.trace_file))
+
             self.recorder = None
 
         # Stop mitmproxy
@@ -298,12 +333,34 @@ class RecordingSession:
 
         logger.info("📊 Analyzing recording session...")
 
-        # Parse trace file
-        logger.info("   Parsing trace events...")
-        self.parser = TraceParser()
-        parse_result = await self.parser.parse(str(self.metadata.trace_file))
+        # Get events based on recording mode
+        parse_result = None
+        if self._codegen_events:
+            # Events already extracted from codegen
+            logger.info("   Using codegen events...")
+            # Create a minimal parse result structure
+            from dataclasses import dataclass
+            @dataclass
+            class CodegenParseResult:
+                events: List
+                stats: Dict[str, Any]
 
-        logger.info(f"   Found {len(parse_result.events)} UI events")
+            parse_result = CodegenParseResult(
+                events=self._codegen_events,
+                stats={
+                    'total_events': len(self._codegen_events),
+                    'event_types': self._count_event_types(self._codegen_events),
+                }
+            )
+            logger.info(f"   Found {len(self._codegen_events)} UI events")
+        elif self.metadata.trace_file and self.metadata.trace_file.exists():
+            # Parse trace file (legacy mode)
+            logger.info("   Parsing trace file...")
+            self.parser = TraceParser()
+            parse_result = await self.parser.parse(str(self.metadata.trace_file))
+            logger.info(f"   Found {len(parse_result.events)} UI events")
+        else:
+            logger.warning("   No events found (no trace file or codegen events)")
 
         # Correlate with network traffic if available
         correlation_result = None
@@ -633,3 +690,18 @@ class RecordingSession:
             data["end_time"] = datetime.fromisoformat(data["end_time"])
 
         return SessionMetadata(**data)
+
+    def _count_event_types(self, events: List[Dict[str, Any]]) -> Dict[str, int]:
+        """Count event types from event list.
+
+        Args:
+            events: List of event dictionaries
+
+        Returns:
+            Dictionary mapping event type to count
+        """
+        type_counts = {}
+        for event in events:
+            event_type = event.get('apiName', 'unknown')
+            type_counts[event_type] = type_counts.get(event_type, 0) + 1
+        return type_counts

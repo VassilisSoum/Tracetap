@@ -13,8 +13,6 @@ from .test_from_recording import (
 )
 
 __all__ = [
-    "regression_generator",
-    "assertion_builder",
     "TestGenerator",
     "TestTemplate",
     "CodeSynthesizer",

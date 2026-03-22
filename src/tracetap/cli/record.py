@@ -145,6 +145,14 @@ Troubleshooting:
     )
 
     parser.add_argument(
+        "--recording-mode",
+        type=str,
+        choices=['codegen', 'trace'],
+        default='codegen',
+        help="Recording mode: codegen (records manual interactions) or trace (API calls only, default: codegen)",
+    )
+
+    parser.add_argument(
         "--window-ms",
         type=int,
         default=500,
@@ -265,6 +273,7 @@ def show_welcome(url: str, args: argparse.Namespace) -> None:
         f"[bold]Target URL:[/bold] {url}\n"
         f"[bold]Session Name:[/bold] {args.name or 'auto-generated'}\n"
         f"[bold]Output Directory:[/bold] {args.output}\n"
+        f"[bold]Recording Mode:[/bold] {args.recording_mode}\n"
         f"[bold]Headless Mode:[/bold] {args.headless}\n"
         f"[bold]Proxy Port:[/bold] {args.proxy_port}\n"
         f"[bold]Correlation Window:[/bold] {args.window_ms}ms\n"
@@ -293,6 +302,7 @@ async def record_session(url: str, args: argparse.Namespace) -> Optional[Session
             headless=args.headless,
             screenshots=not args.no_screenshots,
             snapshots=not args.no_snapshots,
+            recording_mode=args.recording_mode,
         )
 
         # Create recording session
@@ -309,6 +319,7 @@ async def record_session(url: str, args: argparse.Namespace) -> Optional[Session
             console.print(f"  URL: {url}")
             console.print(f"  Session Name: {args.name or 'auto-generated'}")
             console.print(f"  Output: {Path(args.output).absolute()}")
+            console.print(f"  Recording Mode: {args.recording_mode}")
             console.print(f"  Headless: {args.headless}")
             console.print(f"  Proxy Port: {args.proxy_port}")
             console.print(f"  Correlation Window: {args.window_ms}ms")

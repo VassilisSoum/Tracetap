@@ -211,6 +211,10 @@ stubs/
 *.capture.json
 *.raw.json
 
+# TraceTap recording sessions (runtime artifacts)
+sessions/
+recordings/
+
 # Local configuration files
 config.local.json
 settings.local.yaml

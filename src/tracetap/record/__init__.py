@@ -36,6 +36,8 @@ __version__ = "1.0.0"
 
 # Main classes
 from .recorder import TraceRecorder, RecorderOptions
+from .codegen_recorder import CodegenRecorder, CodegenOptions
+from .codegen_parser import CodegenParser
 from .parser import TraceParser
 from .correlator import EventCorrelator, CorrelationOptions, NetworkRequest, load_mitmproxy_traffic
 from .session import RecordingSession, SessionMetadata, SessionResult
@@ -43,6 +45,9 @@ from .session import RecordingSession, SessionMetadata, SessionResult
 __all__ = [
     "TraceRecorder",
     "RecorderOptions",
+    "CodegenRecorder",
+    "CodegenOptions",
+    "CodegenParser",
     "TraceParser",
     "EventCorrelator",
     "CorrelationOptions",

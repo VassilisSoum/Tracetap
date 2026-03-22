@@ -604,3 +604,77 @@ if ($cert) {{
         print("   docs/CERTIFICATE_INSTALLATION.md", flush=True)
         print("   docs/TROUBLESHOOTING.md", flush=True)
         print(flush=True)
+
+
+def main():
+    """Main entry point for certificate installer CLI."""
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="TraceTap Certificate Installer - Install mitmproxy CA certificate to system trust store",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python -m tracetap.cert_installer install    # Install certificate
+  python -m tracetap.cert_installer verify     # Verify installation
+  python -m tracetap.cert_installer info       # Show certificate info
+  python -m tracetap.cert_installer uninstall  # Remove certificate
+
+For HTTPS traffic capture, the certificate must be installed and trusted.
+        """
+    )
+
+    parser.add_argument(
+        'action',
+        choices=['install', 'verify', 'uninstall', 'info'],
+        help='Action to perform'
+    )
+
+    parser.add_argument(
+        '--cert-path',
+        type=Path,
+        help='Path to certificate file (auto-detected if not specified)'
+    )
+
+    parser.add_argument(
+        '-v', '--verbose',
+        action='store_true',
+        help='Enable verbose output'
+    )
+
+    args = parser.parse_args()
+
+    # Create installer instance
+    installer = CertificateInstaller(cert_path=args.cert_path, verbose=args.verbose)
+
+    # Execute requested action
+    try:
+        if args.action == 'install':
+            success = installer.install()
+            sys.exit(0 if success else 1)
+
+        elif args.action == 'verify':
+            success = installer.verify()
+            sys.exit(0 if success else 1)
+
+        elif args.action == 'uninstall':
+            success = installer.uninstall()
+            sys.exit(0 if success else 1)
+
+        elif args.action == 'info':
+            installer.info()
+            sys.exit(0)
+
+    except KeyboardInterrupt:
+        print("\n\n⚠️  Operation cancelled by user", flush=True)
+        sys.exit(130)
+    except Exception as e:
+        print(f"\n❌ Unexpected error: {e}", flush=True)
+        if args.verbose:
+            import traceback
+            traceback.print_exc()
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

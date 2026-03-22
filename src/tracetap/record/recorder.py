@@ -33,8 +33,9 @@ class RecorderOptions:
     screenshots: bool = True
     snapshots: bool = True
     sources: bool = True
-    viewport_width: int = 1280
-    viewport_height: int = 720
+    viewport_width: int = 1920
+    viewport_height: int = 1080
+    recording_mode: str = "codegen"  # "codegen" or "trace"
 
 
 class TraceRecorder:
@@ -176,7 +177,8 @@ class TraceRecorder:
             self.playwright = await async_playwright().start()
             self.browser = await self.playwright.chromium.launch(
                 headless=self.options.headless,
-                slow_mo=0  # No artificial slowdown
+                slow_mo=0,  # No artificial slowdown
+                args=['--start-maximized']  # Maximize browser window
             )
         except Exception as e:
             logger.error(f"Failed to launch browser: {e}")

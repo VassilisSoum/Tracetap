@@ -86,9 +86,11 @@ tracetap-generate-tests session -o tests/ \
 
 TraceTap combines three powerful capabilities that no other tool offers together:
 
-1. **🎬 Record Real User Interactions** - Capture UI events with microsecond precision using Playwright trace files
+1. **🎬 Record Real User Interactions** - Capture UI events with microsecond precision using hybrid codegen + trace
 2. **🌐 Capture Network Traffic** - Automatically record all HTTP/HTTPS API calls with mitmproxy
 3. **🤖 AI-Powered Test Generation** - Claude AI converts your recordings into production-ready Playwright tests
+
+**NEW: Hybrid Recording Mode** - Combines Playwright codegen (captures manual interactions) with trace files (real timestamps) for accurate UI-to-API correlation. [Learn more](HYBRID_RECORDING.md)
 
 ### The Complete Workflow
 
@@ -238,23 +240,90 @@ You record a login flow → Get 10 tests → AI suggests 15 more edge cases → 
 
 ### Installation
 
-```bash
-# Install TraceTap
-pip install tracetap
+> **📖 Detailed Installation Guide:** See [INSTALL.md](INSTALL.md) for comprehensive instructions with troubleshooting.
 
-# Install Playwright (for UI recording)
+**Quick Overview:**
+- TraceTap automatically installs: mitmproxy, playwright (Python), anthropic
+- You manually install: Playwright browsers, mitmproxy certificate
+- Total time: ~5 minutes
+
+```bash
+# 1. Clone and install TraceTap from source
+git clone https://github.com/VassilisSoum/tracetap.git
+cd tracetap  # ⚠️ IMPORTANT: Make sure you're in the tracetap directory!
+
+# 2. (Optional) Run setup verification script
+./verify-setup.sh  # Checks you're in the right directory and have dependencies
+
+# 3. Build and install the package (includes mitmproxy automatically)
+pip3 install build
+python3 -m build
+pip3 install dist/tracetap-1.0.0-py3-none-any.whl
+# This installs TraceTap and all dependencies including:
+#   - mitmproxy (traffic capture)
+#   - playwright (browser automation)
+#   - anthropic (AI test generation)
+
+# 4. Install Playwright browsers (REQUIRED for UI recording)
+# Why separate? Playwright splits into two parts:
+#   - Python package (installed above via dependencies)
+#   - Browser binaries (Chromium, Firefox, WebKit)
+# The browser binaries are ~300MB and must be installed separately
 playwright install chromium
 
-# Install mitmproxy (for traffic capture)
-pip install mitmproxy
-
-# ⚠️ REQUIRED FOR HTTPS: Install mitmproxy certificate
+# 5. ⚠️ REQUIRED FOR HTTPS: Install mitmproxy certificate
 # This allows TraceTap to capture encrypted HTTPS traffic
-python -m tracetap.cert_installer install
 
-# Set up Claude AI (for test generation)
+# mitmproxy was already installed in step 3 (it's a dependency)
+# Now generate the certificate by running mitmproxy once:
+mitmproxy --version  # This creates ~/.mitmproxy/mitmproxy-ca-cert.pem
+# Press 'q' to quit if mitmproxy starts
+
+# Then install it to your system trust store
+python3 -m tracetap.cert_installer install
+# Note: On Linux, you may need sudo or follow manual instructions
+
+# Verify installation
+python3 -m tracetap.cert_installer verify
+
+# 6. Set up Claude AI (for test generation)
 export ANTHROPIC_API_KEY=sk-ant-api03-...
+
+# 7. Verify installation
+tracetap-record --help
 ```
+
+## Understanding the Dependencies
+
+TraceTap automatically installs several key dependencies:
+
+### 1. **mitmproxy** (Network Traffic Capture)
+- **What it is:** An interactive HTTPS proxy
+- **Installation:** Automatic (included in TraceTap dependencies)
+- **Verify it's installed:** `mitmproxy --version`
+- **Manual installation (if needed):** `pip3 install mitmproxy`
+- **Why needed:** Captures HTTP/HTTPS API traffic during recording
+- **First-time setup:** Run `mitmproxy --version` to generate certificate files in `~/.mitmproxy/`
+
+### 2. **Playwright** (Browser Automation)
+- **What it is:** Browser automation library
+- **Installation:** Two parts
+  - Python package: Automatic (included in TraceTap dependencies)
+  - Browser binaries: Manual - `playwright install chromium`
+- **Why needed:** Controls the browser during UI recording
+
+### 3. **Anthropic SDK** (AI Test Generation)
+- **What it is:** Claude AI API client
+- **Installation:** Automatic (included in TraceTap dependencies)
+- **Why needed:** Powers AI test generation from recordings
+
+**Why does Playwright need a separate browser installation?**
+
+Playwright is split into two components:
+1. **Python package** (`playwright`) - The API/automation library (installed via pip)
+2. **Browser binaries** - Actual Chromium/Firefox/WebKit browsers (~300MB each)
+
+The `playwright install chromium` command downloads the Chromium browser binary that Playwright controls during recording. Without this, you'll get an error: "Executable doesn't exist at /path/to/chromium".
 
 > **⚠️ HTTPS Certificate Required**
 >
@@ -297,15 +366,68 @@ npx playwright test tests/generated.spec.ts
 
 #### 🔧 Troubleshooting Common Issues
 
+**`ERROR Source ... does not appear to be a Python project: no pyproject.toml or setup.py`**
+- You're running `python3 -m build` from the wrong directory
+- This happens when you're not in the TraceTap project root
+- Example of the error:
+  ```bash
+  $ pwd
+  /home/user/IdeaProjects/personal/TraceTap-Rebrand  # ❌ Wrong!
+  $ python3 -m build
+  ERROR Source ... does not appear to be a Python project
+  ```
+- Fix: Change to the TraceTap project root:
+  ```bash
+  cd /path/to/tracetap  # wherever you cloned it (exact folder name!)
+  ls pyproject.toml     # verify you're in the right place (file must exist)
+  python3 -m build      # now it will work
+  ```
+- Or run the verification script: `./verify-setup.sh`
+
+**`playwright: command not found` or `ModuleNotFoundError: No module named 'playwright.__main__'`**
+- This means the Playwright package is corrupted or not installed
+- Fix: Reinstall Playwright: `pip3 uninstall playwright -y && pip3 install playwright`
+- Then install browsers: `playwright install chromium`
+
+**`Executable doesn't exist at /path/to/chromium`**
+- You installed the Playwright package but forgot to download browsers
+- Fix: Run `playwright install chromium` (this downloads the ~300MB browser binary)
+
+**`mitmproxy: command not found`**
+- mitmproxy wasn't installed or isn't in your PATH
+- Check if it's installed: `pip3 list | grep mitmproxy`
+- Fix: Install manually: `pip3 install mitmproxy`
+- Or reinstall TraceTap which includes it as a dependency
+
+**mitmproxy certificate not found (`~/.mitmproxy/mitmproxy-ca-cert.pem`)**
+- The certificate hasn't been generated yet
+- Fix: Run mitmproxy once to generate it: `mitmproxy --version` (then press 'q' to quit)
+- Or start mitmproxy briefly: `mitmproxy` (then press 'q')
+
+**Certificate installer commands complete immediately with no output**
+- The cert_installer module was missing the `__main__` entry point (fixed in v1.0.0)
+- If you still see this issue, rebuild and reinstall:
+  ```bash
+  cd /path/to/tracetap
+  python3 -m build
+  pip3 install dist/tracetap-1.0.0-py3-none-any.whl --force-reinstall
+  ```
+
 **Not capturing HTTPS traffic?**
-- ✅ Run `python -m tracetap.cert_installer verify` to check certificate installation
+- ✅ Generate certificate first: `mitmproxy --version` (creates ~/.mitmproxy/mitmproxy-ca-cert.pem)
+- ✅ Install certificate: `python3 -m tracetap.cert_installer install`
+- ✅ Verify installation: `python3 -m tracetap.cert_installer verify`
+- ✅ On Linux, you may need sudo or follow the manual instructions shown
 - ✅ Restart your browser after installing the certificate
-- ✅ Make sure mitmproxy is installed: `pip install mitmproxy`
 
 **Recording session empty or missing API calls?**
 - Check that the app makes network requests during recording
 - Ensure you're interacting with the app before pressing Enter to stop recording
 - For API-only apps, use the legacy proxy mode (see below)
+
+**ImportError: cannot import name 'main' from 'tracetap'**
+- The package metadata wasn't read correctly during pip install
+- Fix: Use the build module approach shown in installation instructions above
 
 **Need help?** See our [Troubleshooting Guide](docs/troubleshooting.md) or [open an issue](https://github.com/VassilisSoum/tracetap/issues).
 
@@ -516,15 +638,32 @@ tracetap-contract verify contracts/ --target http://staging-api.example.com
 ### Install
 
 ```bash
+# Clone and install from source
+git clone https://github.com/VassilisSoum/tracetap.git
+cd tracetap  # ⚠️ Must be in project root directory!
+
+# Verify you're in the right place
+ls pyproject.toml  # This file must exist
+
+# Build the package
+pip3 install build
+python3 -m build
+
 # Basic installation
-pip install tracetap
+pip3 install dist/tracetap-1.0.0-py3-none-any.whl
 
-# For development
-pip install tracetap[dev]
+# For development (includes test tools)
+pip3 install "dist/tracetap-1.0.0-py3-none-any.whl[dev]"
 
-# Everything
-pip install tracetap[all]
+# Everything (all optional dependencies)
+pip3 install "dist/tracetap-1.0.0-py3-none-any.whl[all]"
+
+# Install Playwright browsers (separate ~300MB download)
+# This is REQUIRED - downloads the actual Chromium browser binary
+playwright install chromium
 ```
+
+**Note:** We use `python3 -m build` instead of `pip install -e .` because the editable install requires PEP 660 support. The build approach works reliably on all systems.
 
 ### Configure AI Features
 
