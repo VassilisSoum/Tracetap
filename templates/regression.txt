@@ -1,0 +1,392 @@
+Generate a regression test focused on API contract validation.
+
+GOAL: Create a test that will catch breaking changes:
+- New required fields added
+- Existing fields removed
+- Data type changes
+- Status code changes
+- Response format changes
+- Request schema changes
+
+CORRELATED EVENTS:
+{events_json}
+
+REQUIREMENTS:
+1. Focus on API contracts, not UI specifics
+2. Generate schema snapshots for responses
+3. Validate against known-good response structure
+4. Flag any deviations from expected contract
+5. Include version metadata
+6. Generate separate tests for each API endpoint
+7. Validate both request and response schemas
+8. Include backward compatibility checks
+9. Document expected behavior in comments
+
+OUTPUT FORMAT: {output_format}
+
+CONTRACT SNAPSHOT:
+For each API call, generate a contract definition:
+{
+  "endpoint": "POST /api/login",
+  "version": "1.0.0",
+  "request_schema": {
+    "required": ["email", "password"],
+    "properties": {
+      "email": {"type": "string", "format": "email"},
+      "password": {"type": "string", "minLength": 8}
+    }
+  },
+  "response_schema": {
+    "status_codes": [200, 401],
+    "200": {
+      "required": ["token", "userId", "expiresAt"],
+      "properties": {
+        "token": {"type": "string", "pattern": "^[A-Za-z0-9-_]+\\.[A-Za-z0-9-_]+\\.[A-Za-z0-9-_]+$"},
+        "userId": {"type": "integer", "minimum": 1},
+        "expiresAt": {"type": "string", "format": "date-time"}
+      }
+    },
+    "401": {
+      "required": ["error"],
+      "properties": {
+        "error": {"type": "string"}
+      }
+    }
+  }
+}
+
+BREAKING CHANGE DETECTION:
+Generate assertions that will fail on:
+- Missing required response fields
+- Changed field types
+- New required request fields
+- Status code changes
+- Removed optional fields that were previously present
+- Changed response structure (nested objects)
+
+EXAMPLE OUTPUT (TypeScript):
+import { test, expect } from '@playwright/test';
+
+/**
+ * API Contract Tests
+ * Version: 1.0.0
+ * Last Updated: 2024-01-15
+ *
+ * These tests validate API contracts and will fail if breaking changes are introduced.
+ */
+
+test.describe('POST /api/login - Contract v1.0.0', () => {
+  const CONTRACT_VERSION = '1.0.0';
+
+  const EXPECTED_REQUEST_SCHEMA = {
+    required: ['email', 'password'],
+    optional: []
+  };
+
+  const EXPECTED_SUCCESS_RESPONSE = {
+    status: 200,
+    required: ['token', 'userId', 'expiresAt'],
+    types: {
+      token: 'string',
+      userId: 'number',
+      expiresAt: 'string'
+    },
+    patterns: {
+      token: /^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+$/, // JWT
+      expiresAt: /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/ // ISO 8601
+    }
+  };
+
+  const EXPECTED_ERROR_RESPONSE = {
+    status: 401,
+    required: ['error'],
+    types: {
+      error: 'string'
+    }
+  };
+
+  test('should match success response contract', async ({ page }) => {
+    test.info().annotations.push(
+      { type: 'contract_version', description: CONTRACT_VERSION },
+      { type: 'breaking_change_detection', description: 'enabled' }
+    );
+
+    await page.goto('https://app.example.com/login');
+
+    // Trigger login flow
+    await page.fill('input[name="email"]', 'user@test.com');
+    await page.fill('input[name="password"]', 'validpass123');
+
+    const responsePromise = page.waitForResponse(resp =>
+      resp.url().includes('/api/login') && resp.request().method() === 'POST'
+    );
+    await page.click('button[type="submit"]');
+
+    const response = await responsePromise;
+    const body = await response.json();
+
+    // Validate status code (breaking change if different)
+    expect(response.status()).toBe(EXPECTED_SUCCESS_RESPONSE.status);
+
+    // Validate all required fields are present
+    for (const field of EXPECTED_SUCCESS_RESPONSE.required) {
+      expect(body).toHaveProperty(field);
+    }
+
+    // Validate field types (breaking change if different)
+    for (const [field, expectedType] of Object.entries(EXPECTED_SUCCESS_RESPONSE.types)) {
+      expect(typeof body[field]).toBe(expectedType);
+    }
+
+    // Validate field patterns (breaking change if format changed)
+    for (const [field, pattern] of Object.entries(EXPECTED_SUCCESS_RESPONSE.patterns)) {
+      expect(body[field]).toMatch(pattern);
+    }
+
+    // Detect removed fields (potential breaking change)
+    const actualFields = Object.keys(body);
+    const expectedFields = EXPECTED_SUCCESS_RESPONSE.required;
+    const missingFields = expectedFields.filter(f => !actualFields.includes(f));
+    expect(missingFields).toEqual([]);
+
+    // Detect new required fields (breaking change for clients)
+    // This is informational - log but don't fail
+    const newFields = actualFields.filter(f => !expectedFields.includes(f));
+    if (newFields.length > 0) {
+      console.log(`⚠️  New fields detected: ${newFields.join(', ')}`);
+      console.log('   Consider updating contract version if these are now required');
+    }
+  });
+
+  test('should match error response contract', async ({ page }) => {
+    await page.goto('https://app.example.com/login');
+
+    // Trigger error flow
+    await page.fill('input[name="email"]', 'invalid@test.com');
+    await page.fill('input[name="password"]', 'wrongpass');
+
+    const responsePromise = page.waitForResponse(resp =>
+      resp.url().includes('/api/login') && resp.request().method() === 'POST'
+    );
+    await page.click('button[type="submit"]');
+
+    const response = await responsePromise;
+    const body = await response.json();
+
+    // Validate error status code
+    expect(response.status()).toBe(EXPECTED_ERROR_RESPONSE.status);
+
+    // Validate error response structure
+    for (const field of EXPECTED_ERROR_RESPONSE.required) {
+      expect(body).toHaveProperty(field);
+    }
+
+    for (const [field, expectedType] of Object.entries(EXPECTED_ERROR_RESPONSE.types)) {
+      expect(typeof body[field]).toBe(expectedType);
+    }
+  });
+
+  test('should validate request schema', async ({ page }) => {
+    await page.goto('https://app.example.com/login');
+
+    await page.fill('input[name="email"]', 'user@test.com');
+    await page.fill('input[name="password"]', 'validpass123');
+
+    const responsePromise = page.waitForResponse(resp =>
+      resp.url().includes('/api/login') && resp.request().method() === 'POST'
+    );
+    await page.click('button[type="submit"]');
+
+    const response = await responsePromise;
+    const requestBody = response.request().postDataJSON();
+
+    // Validate request has all required fields
+    for (const field of EXPECTED_REQUEST_SCHEMA.required) {
+      expect(requestBody).toHaveProperty(field);
+    }
+
+    // Detect unexpected required fields (breaking change for server)
+    const actualFields = Object.keys(requestBody);
+    const expectedRequired = EXPECTED_REQUEST_SCHEMA.required;
+    const unexpectedFields = actualFields.filter(
+      f => !expectedRequired.includes(f) && !EXPECTED_REQUEST_SCHEMA.optional.includes(f)
+    );
+
+    if (unexpectedFields.length > 0) {
+      console.log(`⚠️  Unexpected request fields: ${unexpectedFields.join(', ')}`);
+    }
+  });
+});
+
+test.describe('GET /api/user/:id - Contract v1.0.0', () => {
+  const CONTRACT_VERSION = '1.0.0';
+
+  const EXPECTED_RESPONSE = {
+    status: 200,
+    required: ['id', 'email', 'createdAt', 'profile'],
+    nested: {
+      profile: {
+        required: ['name', 'avatar'],
+        types: {
+          name: 'string',
+          avatar: 'string'
+        }
+      }
+    },
+    types: {
+      id: 'number',
+      email: 'string',
+      createdAt: 'string'
+    }
+  };
+
+  test('should match user response contract with nested objects', async ({ page }) => {
+    test.info().annotations.push({ type: 'contract_version', description: CONTRACT_VERSION });
+
+    await page.goto('https://app.example.com/profile');
+
+    const responsePromise = page.waitForResponse(resp =>
+      resp.url().match(/\/api\/user\/\d+/) && resp.request().method() === 'GET'
+    );
+
+    const response = await responsePromise;
+    const body = await response.json();
+
+    // Validate top-level fields
+    expect(response.status()).toBe(EXPECTED_RESPONSE.status);
+
+    for (const field of EXPECTED_RESPONSE.required) {
+      expect(body).toHaveProperty(field);
+    }
+
+    for (const [field, expectedType] of Object.entries(EXPECTED_RESPONSE.types)) {
+      expect(typeof body[field]).toBe(expectedType);
+    }
+
+    // Validate nested objects
+    for (const [field, schema] of Object.entries(EXPECTED_RESPONSE.nested)) {
+      expect(body).toHaveProperty(field);
+      expect(typeof body[field]).toBe('object');
+
+      for (const nestedField of schema.required) {
+        expect(body[field]).toHaveProperty(nestedField);
+      }
+
+      for (const [nestedField, expectedType] of Object.entries(schema.types)) {
+        expect(typeof body[field][nestedField]).toBe(expectedType);
+      }
+    }
+  });
+});
+
+EXAMPLE OUTPUT (Python):
+import pytest
+from playwright.sync_api import Page, expect
+import re
+
+def test_login_api_contract_success(page: Page) -> None:
+    """POST /api/login - Success response contract v1.0.0.
+
+    Breaking changes detected by this test:
+    - Missing required fields (token, userId, expiresAt)
+    - Changed field types
+    - Changed status code
+    - Changed response format
+    """
+    CONTRACT_VERSION = '1.0.0'
+
+    EXPECTED_RESPONSE = {
+        'status': 200,
+        'required': ['token', 'userId', 'expiresAt'],
+        'types': {
+            'token': str,
+            'userId': int,
+            'expiresAt': str
+        }
+    }
+
+    page.goto('https://app.example.com/login')
+
+    # Trigger login
+    page.fill('input[name="email"]', 'user@test.com')
+    page.fill('input[name="password"]', 'validpass123')
+
+    with page.expect_response(lambda r: '/api/login' in r.url and r.request.method == 'POST') as response_info:
+        page.click('button[type="submit"]')
+
+    response = response_info.value
+    body = response.json()
+
+    # Contract validation
+    assert response.status == EXPECTED_RESPONSE['status'], \
+        f"Status code changed: expected {EXPECTED_RESPONSE['status']}, got {response.status}"
+
+    # Required fields
+    for field in EXPECTED_RESPONSE['required']:
+        assert field in body, f"Required field missing: {field}"
+
+    # Field types
+    for field, expected_type in EXPECTED_RESPONSE['types'].items():
+        assert isinstance(body[field], expected_type), \
+            f"Field type changed: {field} expected {expected_type}, got {type(body[field])}"
+
+    # JWT token pattern
+    assert re.match(r'^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+$', body['token']), \
+        "Token format changed: expected JWT format"
+
+    # ISO 8601 timestamp
+    assert re.match(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}', body['expiresAt']), \
+        "Timestamp format changed: expected ISO 8601"
+
+    # Detect new fields (potential breaking change)
+    actual_fields = set(body.keys())
+    expected_fields = set(EXPECTED_RESPONSE['required'])
+    new_fields = actual_fields - expected_fields
+
+    if new_fields:
+        print(f"⚠️  New fields detected: {', '.join(new_fields)}")
+        print(f"   Contract version: {CONTRACT_VERSION}")
+
+def test_login_api_contract_error(page: Page) -> None:
+    """POST /api/login - Error response contract v1.0.0."""
+    EXPECTED_ERROR = {
+        'status': 401,
+        'required': ['error'],
+        'types': {'error': str}
+    }
+
+    page.goto('https://app.example.com/login')
+
+    page.fill('input[name="email"]', 'invalid@test.com')
+    page.fill('input[name="password"]', 'wrongpass')
+
+    with page.expect_response(lambda r: '/api/login' in r.url) as response_info:
+        page.click('button[type="submit"]')
+
+    response = response_info.value
+    body = response.json()
+
+    assert response.status == EXPECTED_ERROR['status']
+
+    for field in EXPECTED_ERROR['required']:
+        assert field in body
+
+    for field, expected_type in EXPECTED_ERROR['types'].items():
+        assert isinstance(body[field], expected_type)
+
+VERSIONING AND MIGRATION:
+When API changes are detected, update contract version and document migration:
+
+/**
+ * Migration Guide: v1.0.0 -> v2.0.0
+ *
+ * Breaking Changes:
+ * 1. POST /api/login now requires 'deviceId' field in request
+ * 2. Response includes new required field 'refreshToken'
+ * 3. 'expiresAt' changed from ISO string to Unix timestamp (number)
+ *
+ * Migration Steps:
+ * 1. Update client to include deviceId in login requests
+ * 2. Handle refreshToken in response
+ * 3. Update timestamp parsing logic
+ */

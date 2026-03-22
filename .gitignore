@@ -211,6 +211,10 @@ stubs/
 *.capture.json
 *.raw.json
 
+# TraceTap recording sessions (runtime artifacts)
+sessions/
+recordings/
+
 # Local configuration files
 config.local.json
 settings.local.yaml
@@ -239,3 +243,35 @@ htmlcov/
 tmp/
 temp/
 test_output/
+
+# =====================================
+# Private/Internal Documentation
+# =====================================
+
+# Marketing and promotional materials (keep private)
+docs/launch/
+docs/video/
+
+# Internal planning and task management
+.omc/
+.claude/
+
+# AI session-specific instructions
+**/CLAUDE.md
+CLAUDE.md
+
+# Business/strategy documents (if any)
+*marketing*
+*promo*
+*strategy*
+*pitch*
+*.pptx
+*.docx
+*.xlsx
+
+# Social media drafts
+*twitter*.md
+*linkedin*.md
+*reddit*.md
+*hackernews*.md
+*devto*.md

@@ -14,7 +14,7 @@ from mitmproxy import http
 
 # Import our modular components
 from filters import RequestFilter
-from exporters import PostmanExporter, RawLogExporter, OpenAPIExporter
+from exporters import RawLogExporter
 from utils import safe_body, calc_duration, status_color
 
 
@@ -168,15 +168,6 @@ class TraceTapAddon:
 
         print(f"\n📊 Captured {len(self.records)} requests", flush=True)
 
-        # Export to Postman collection if requested
-        if self.export_path:
-            try:
-                PostmanExporter.export(self.records, self.session_name, self.export_path)
-            except Exception as e:
-                print(f"Error exporting Postman collection: {e}", file=sys.stderr, flush=True)
-                import traceback
-                traceback.print_exc()
-
         # Export to raw log if requested
         if self.raw_log_path:
             try:
@@ -190,19 +181,6 @@ class TraceTapAddon:
                 )
             except Exception as e:
                 print(f"Error exporting raw log: {e}", file=sys.stderr, flush=True)
-                import traceback
-                traceback.print_exc()
-
-        # Export to OpenAPI spec if requested
-        if self.openapi_path:
-            try:
-                OpenAPIExporter.export(
-                    self.records,
-                    self.session_name,
-                    self.openapi_path
-                )
-            except Exception as e:
-                print(f"Error exporting OpenAPI spec: {e}", file=sys.stderr, flush=True)
                 import traceback
                 traceback.print_exc()
 

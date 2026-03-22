@@ -1,7 +1,8 @@
 """
-TraceTap - HTTP Traffic Capture and Replay Tool
+TraceTap - Record browser tests, generate Playwright code with AI.
 
-A comprehensive toolkit for capturing, analyzing, and replaying HTTP traffic.
+Record manual browser interactions and network traffic, correlate them,
+then generate Playwright test code using Claude AI.
 """
 
-__version__ = "1.0.0"
+__version__ = "2.0.0"

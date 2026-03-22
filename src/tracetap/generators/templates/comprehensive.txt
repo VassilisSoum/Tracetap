@@ -1,0 +1,228 @@
+# Template: Comprehensive
+# Description: Full validation template with assertions and edge case handling
+# Usage: Use for production-grade tests with thorough validation
+
+## Prompt Template:
+
+🚨 CRITICAL INSTRUCTIONS - READ FIRST:
+===========================================
+1. You MUST generate EXECUTABLE TypeScript code, NOT JSON examples or placeholders
+2. You MUST include import statements at the top: import {{ test, expect }} from '@playwright/test';
+3. DO NOT return generic JSON structures - return actual runnable .spec.ts code
+4. DO NOT use placeholder comments like "// Add assertions here" - write actual code
+5. Your output will be saved directly to a .spec.ts file and executed - it MUST work as-is
+6. Generate MULTIPLE test cases (happy path + error scenarios) in test.describe() blocks
+
+You are an expert QA automation engineer specializing in Playwright test generation.
+Your task is to generate COMPREHENSIVE, production-ready, EXECUTABLE Playwright tests from correlated UI and network data.
+
+**TEMPLATE TYPE: COMPREHENSIVE**
+- Generate thorough tests with complete validation
+- Include assertions for status codes, response structure, and data values
+- Add edge case handling (loading states, error scenarios)
+- Use page object patterns where appropriate
+- Include retry logic for flaky interactions
+
+**Guidelines:**
+1. Generate MULTIPLE tests per user flow (happy path + edge cases)
+2. Assert HTTP status codes AND response body structure
+3. Validate response data types and required fields
+4. Handle loading states and transitions
+5. Use data-testid selectors preferentially
+6. Include setup/teardown logic if needed
+7. Add descriptive comments for complex logic
+8. Consider accessibility selectors (role, label)
+
+**Performance Assertions (when enabled):**
+When performance thresholds are provided below, add timing assertions to your tests:
+
+```typescript
+const startTime = Date.now();
+const response = await page.waitForResponse(url => url.includes('/api/endpoint'));
+const duration = Date.now() - startTime;
+expect(duration).toBeLessThan(threshold_ms); // Observed Xms during recording
+```
+
+**Input Format:**
+Each correlated event contains:
+- `ui_event`: {{{{type, timestamp, selector, value}}}}
+- `network_calls`: [{{{{method, url, request_body, response_status, response_body}}}}]
+- `correlation`: {{{{confidence, time_delta, method, reasoning}}}}
+
+**Output Format - CRITICAL:**
+You MUST generate ONLY executable TypeScript code following this EXACT structure:
+
+```typescript
+import {{ test, expect }} from '@playwright/test';
+
+test.describe('Feature Name', () => {{
+  test('happy path scenario', async ({{ page }}) => {{
+    // Your test code here with REAL implementations
+  }});
+
+  test('error scenario', async ({{ page }}) => {{
+    // Error handling test with REAL implementations
+  }});
+}});
+```
+
+Requirements (ALL MANDATORY):
+✅ MUST start with: import {{ test, expect }} from '@playwright/test';
+✅ MUST use test.describe() to group related tests
+✅ MUST include multiple test() blocks (minimum 2: happy path + edge case)
+✅ MUST include actual page.goto(), page.click(), page.fill() calls
+✅ MUST include actual expect() assertions with specific matchers (toBe, toMatchObject, etc.)
+✅ MUST include page.waitForResponse() for API validation
+✅ MUST include error handling tests with page.route() mocking
+✅ DO NOT use placeholder text or "TODO" comments
+✅ DO NOT return JSON - return TypeScript code only
+
+**Example Input:**
+```json
+[
+  {{
+    "sequence": 1,
+    "ui_event": {{
+      "type": "click",
+      "timestamp": 1609459200000,
+      "selector": "[data-testid='submit-order']",
+      "value": null
+    }},
+    "network_calls": [
+      {{
+        "method": "POST",
+        "url": "https://api.example.com/orders",
+        "request_body": "{{\"items\":[{{\"id\":1,\"qty\":2}}],\"total\":49.99}}",
+        "response_status": 201,
+        "response_body": "{{\"orderId\":\"ORD-123\",\"status\":\"pending\",\"total\":49.99}}"
+      }},
+      {{
+        "method": "GET",
+        "url": "https://api.example.com/orders/ORD-123",
+        "request_body": null,
+        "response_status": 200,
+        "response_body": "{{\"orderId\":\"ORD-123\",\"status\":\"confirmed\",\"total\":49.99}}"
+      }}
+    ],
+    "correlation": {{
+      "confidence": 0.95,
+      "time_delta": 120,
+      "method": "window",
+      "reasoning": "Click triggered POST /orders and follow-up GET after 120ms"
+    }}
+  }}
+]
+```
+
+**Example Output:**
+```typescript
+import {{ test, expect }} from '@playwright/test';
+
+test.describe('Order Submission Flow', () => {{
+  test('successfully submits order and verifies confirmation', async ({{ page }}) => {{
+    // Setup: Navigate to checkout
+    await page.goto('https://example.com/checkout');
+
+    // Wait for page to be fully loaded
+    await page.waitForLoadState('networkidle');
+
+    // Intercept order creation API call
+    const createOrderPromise = page.waitForResponse(
+      response => response.url().includes('/orders') &&
+                  response.request().method() === 'POST'
+    );
+
+    // Intercept order status check API call
+    const getOrderPromise = page.waitForResponse(
+      response => response.url().match(/\/orders\/ORD-\d+/) &&
+                  response.request().method() === 'GET'
+    );
+
+    // Click submit order button
+    await page.click('[data-testid="submit-order"]');
+
+    // Verify order creation succeeded
+    const createResponse = await createOrderPromise;
+    expect(createResponse.status()).toBe(201);
+
+    const createBody = await createResponse.json();
+    expect(createBody).toMatchObject({{
+      orderId: expect.stringMatching(/^ORD-/),
+      status: 'pending',
+      total: expect.any(Number)
+    }});
+
+    // Verify order status check
+    const getResponse = await getOrderPromise;
+    expect(getResponse.status()).toBe(200);
+
+    const getBody = await getResponse.json();
+    expect(getBody).toMatchObject({{
+      orderId: createBody.orderId,
+      status: 'confirmed',
+      total: createBody.total
+    }});
+
+    // Verify UI shows success state
+    await expect(page.locator('[data-testid="order-success"]')).toBeVisible();
+    await expect(page.locator('[data-testid="order-id"]')).toHaveText(createBody.orderId);
+  }});
+
+  test('handles network error gracefully', async ({{ page }}) => {{
+    // Setup: Navigate to checkout
+    await page.goto('https://example.com/checkout');
+
+    // Mock network error
+    await page.route('**/orders', route => route.abort('failed'));
+
+    // Attempt to submit order
+    await page.click('[data-testid="submit-order"]');
+
+    // Verify error message is displayed
+    await expect(page.locator('[data-testid="error-message"]')).toBeVisible();
+    await expect(page.locator('[data-testid="error-message"]')).toContainText('failed');
+  }});
+
+  test('shows loading state during submission', async ({{ page }}) => {{
+    // Setup: Navigate to checkout
+    await page.goto('https://example.com/checkout');
+
+    // Slow down network to verify loading state
+    await page.route('**/orders', route => {{
+      setTimeout(() => route.continue(), 2000);
+    }});
+
+    // Click submit button
+    await page.click('[data-testid="submit-order"]');
+
+    // Verify loading indicator appears
+    await expect(page.locator('[data-testid="loading-spinner"]')).toBeVisible();
+
+    // Wait for loading to finish
+    await expect(page.locator('[data-testid="loading-spinner"]')).toBeHidden({{ timeout: 5000 }});
+  }});
+}});
+```
+
+**Important Notes:**
+- Generate multiple test cases covering different scenarios
+- Include comprehensive assertions on response structure
+- Handle edge cases (errors, loading, timeouts)
+- Use waitForResponse for network verification
+- Add descriptive test names and comments
+- Follow Playwright best practices
+- Ensure tests are deterministic and reliable
+
+**VALIDATION CHECKLIST - Verify before returning:**
+□ Line 1 contains: import {{ test, expect }} from '@playwright/test';
+□ Code includes test.describe() block
+□ Code includes at least 2-3 test() blocks (happy path + edge cases)
+□ Each test includes page.goto() to navigate
+□ Each test includes page.waitForResponse() for API calls
+□ Code includes error handling test with page.route()
+□ Code includes comprehensive expect() assertions (toMatchObject, toBeDefined, etc.)
+□ NO placeholder comments like "// TODO" or "// Add code here"
+□ NO JSON structures - only TypeScript code
+□ Code is syntactically valid and will execute without errors
+
+Now generate the tests based on the input data below. Return ONLY the TypeScript code.
