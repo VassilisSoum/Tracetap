@@ -55,6 +55,7 @@ class SessionResult:
     ui_events: List[Dict[str, Any]]
     network_calls: List[Dict[str, Any]]
     correlation_result: Optional[CorrelationResult] = None
+    opaque_frames: List[Dict[str, Any]] = None  # Screenshots of iframes where JS was blocked
 
 
 class RecordingSession:
@@ -154,11 +155,16 @@ class RecordingSession:
 
         ui_events = raw_result["ui_events"]
         network_calls = raw_result["network_calls"]
+        opaque_frames = raw_result.get("opaque_frames", [])
 
         logger.info(
             f"Captured {len(ui_events)} UI events, "
             f"{len(network_calls)} network calls"
         )
+        if opaque_frames:
+            logger.info(
+                f"Captured {len(opaque_frames)} opaque iframe screenshot(s) for AI analysis"
+            )
 
         # Correlate UI events with network calls
         correlation_result = self._correlate(ui_events, network_calls)
@@ -167,6 +173,7 @@ class RecordingSession:
             metadata=self.metadata,
             ui_events=ui_events,
             network_calls=network_calls,
+            opaque_frames=opaque_frames,
             correlation_result=correlation_result,
         )
 
@@ -202,6 +209,12 @@ class RecordingSession:
             correlation_json = correlator.format_result(result.correlation_result)
             with open(result.metadata.correlation_file, "w", encoding="utf-8") as f:
                 f.write(correlation_json)
+
+        # Save opaque iframe screenshots (for AI analysis during generation)
+        if result.opaque_frames:
+            frames_file = result.metadata.output_dir / "opaque_frames.json"
+            with open(frames_file, "w", encoding="utf-8") as f:
+                json.dump({"frames": result.opaque_frames}, f, indent=2)
 
         # Save metadata
         self._save_metadata()

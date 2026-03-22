@@ -75,6 +75,7 @@ class GenerationOptions:
     sanitization_config: Optional[SanitizationConfig] = None
     performance_thresholds: Optional[List] = None
     retry_context: Optional[str] = None  # Error feedback for retry attempts
+    opaque_frames: Optional[List] = None  # Screenshots of iframes where JS was blocked
 
 
 @dataclass
@@ -259,13 +260,14 @@ class CodeSynthesizer:
 
     async def synthesize(
         self,
-        prompt: str,
+        prompt,
         config: GenerationConfig,
     ) -> str:
         """Synthesize test code from prompt.
 
         Args:
-            prompt: Formatted prompt with template and event data
+            prompt: Formatted prompt - either a string or list of content blocks
+                    (text + images for opaque iframe screenshots)
             config: Generation configuration
 
         Returns:
@@ -283,6 +285,12 @@ class CodeSynthesizer:
         logger.info(f"   Output format: {config.output_format.value}")
         logger.info(f"   Template: {config.template.value}")
 
+        # Build message content (supports both string and content blocks)
+        if isinstance(prompt, str):
+            message_content = prompt
+        else:
+            message_content = prompt  # List of content blocks (text + images)
+
         # Try default model, then fallbacks if 404
         models_to_try = [DEFAULT_CLAUDE_MODEL] + [
             m for m in MODEL_FALLBACKS if m != DEFAULT_CLAUDE_MODEL
@@ -295,7 +303,7 @@ class CodeSynthesizer:
                 message = self.client.messages.create(
                     model=model,
                     max_tokens=MAX_GENERATION_TOKENS,
-                    messages=[{"role": "user", "content": prompt}],
+                    messages=[{"role": "user", "content": message_content}],
                 )
 
                 if not message.content:
@@ -596,8 +604,10 @@ class TestGenerator:
 
     def _build_ai_prompt(
         self, events: List[CorrelatedEvent], template: str, options: GenerationOptions
-    ) -> str:
-        """Build Claude AI prompt from template and events.
+    ) -> List[Dict[str, Any]]:
+        """Build Claude AI prompt content from template and events.
+
+        Returns a list of content blocks (text + optional images for opaque iframes).
 
         Args:
             events: Filtered correlated events
@@ -605,11 +615,11 @@ class TestGenerator:
             options: Generation options
 
         Returns:
-            Formatted prompt string
+            List of content blocks for Claude messages API
         """
         events_json = json.dumps([self._serialize_event(e) for e in events], indent=2)
 
-        prompt = template.format(
+        prompt_text = template.format(
             events_json=events_json,
             output_format=options.output_format,
             confidence_threshold=options.confidence_threshold,
@@ -618,7 +628,7 @@ class TestGenerator:
 
         # Inject retry context if this is a retry attempt
         if options.retry_context:
-            prompt += f"\n\nIMPORTANT: {options.retry_context}\n"
+            prompt_text += f"\n\nIMPORTANT: {options.retry_context}\n"
 
         # Inject performance context if thresholds provided
         if options.performance_thresholds:
@@ -626,9 +636,42 @@ class TestGenerator:
 
             analyzer = PerformanceAnalyzer()
             perf_context = analyzer.format_for_prompt(options.performance_thresholds)
-            prompt += f"\n\n{perf_context}\n"
+            prompt_text += f"\n\n{perf_context}\n"
 
-        return prompt
+        # Build content blocks
+        content = [{"type": "text", "text": prompt_text}]
+
+        # Add opaque iframe screenshots for vision analysis
+        if options.opaque_frames:
+            iframe_context = (
+                "\n\nIMPORTANT: The following screenshots show iframes where TraceTap "
+                "could not inject event listeners (e.g. payment forms with strict CSP). "
+                "Analyze each screenshot to identify form fields and generate the "
+                "appropriate page.frameLocator() interactions. Use the frame name or URL "
+                "to create the correct frameLocator selector."
+            )
+            content.append({"type": "text", "text": iframe_context})
+
+            for frame_data in options.opaque_frames:
+                # Add frame context
+                frame_desc = (
+                    f"\nIframe: name=\"{frame_data.get('frame_name', '')}\" "
+                    f"url=\"{frame_data.get('frame_url', '')}\""
+                )
+                content.append({"type": "text", "text": frame_desc})
+
+                # Add screenshot image
+                if frame_data.get("screenshot_base64"):
+                    content.append({
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "image/png",
+                            "data": frame_data["screenshot_base64"],
+                        }
+                    })
+
+        return content
 
     def _serialize_event(self, event: CorrelatedEvent) -> Dict[str, Any]:
         """Convert CorrelatedEvent to JSON-serializable dict with PII sanitization.
@@ -673,11 +716,11 @@ class TestGenerator:
 
         return raw_event
 
-    async def _call_claude_api(self, prompt: str, output_format: str) -> str:
+    async def _call_claude_api(self, prompt, output_format: str) -> str:
         """Call Claude API to generate test code.
 
         Args:
-            prompt: Formatted prompt
+            prompt: Formatted prompt (string or list of content blocks)
             output_format: Expected output format
 
         Returns:

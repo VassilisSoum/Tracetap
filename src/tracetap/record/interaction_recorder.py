@@ -245,6 +245,8 @@ class InteractionRecorder:
         self._ui_events: List[Dict[str, Any]] = []
         self._network_calls: List[NetworkCall] = []
         self._pending_requests: Dict[str, Dict[str, Any]] = {}
+        self._opaque_frames: Dict[str, Dict[str, Any]] = {}  # Frames where JS injection failed
+        self._frame_screenshots: List[Dict[str, Any]] = []  # Screenshots of opaque iframes
         self._recording = False
         self._start_time: Optional[float] = None
 
@@ -341,6 +343,9 @@ class InteractionRecorder:
         # Collect UI events (already in Python via expose_function)
         ui_events = self._collect_ui_events()
 
+        # Screenshot opaque iframes before closing browser
+        await self._screenshot_opaque_frames()
+
         # Calculate duration
         end_time = time.time() * 1000
         duration = (end_time - self._start_time) / 1000 if self._start_time else 0
@@ -353,12 +358,14 @@ class InteractionRecorder:
         result = {
             "ui_events": ui_events,
             "network_calls": [asdict(nc) for nc in self._network_calls],
+            "opaque_frames": self._frame_screenshots,
             "metadata": {
                 "start_time": self._start_time,
                 "end_time": end_time,
                 "duration_seconds": duration,
                 "ui_event_count": len(ui_events),
                 "network_call_count": len(self._network_calls),
+                "opaque_frame_count": len(self._frame_screenshots),
             }
         }
 
@@ -435,7 +442,22 @@ class InteractionRecorder:
                 logger.debug(f"Listeners injected into iframe: {frame_name or frame_url[:60]}")
 
         except Exception as e:
-            logger.debug(f"Failed to inject into frame: {e}")
+            # JS injection blocked (likely sandbox/CSP on cross-origin iframe)
+            # Track as opaque frame — we'll screenshot it instead
+            if not is_main:
+                frame_id = frame_name or frame_url
+                if frame_id and frame_id not in self._opaque_frames:
+                    self._opaque_frames[frame_id] = {
+                        "name": frame_name,
+                        "url": frame_url,
+                        "reason": str(e)[:100],
+                    }
+                    logger.info(
+                        f"Opaque iframe detected (JS blocked): {frame_name or frame_url[:60]}. "
+                        f"Will use screenshot for AI analysis."
+                    )
+            else:
+                logger.debug(f"Failed to inject into frame: {e}")
 
     async def _on_frame_attached(self, frame) -> None:
         """Handle dynamically added iframe - wait for load then inject."""
@@ -474,6 +496,60 @@ class InteractionRecorder:
     def _collect_ui_events(self) -> List[Dict[str, Any]]:
         """Return all captured UI events."""
         return list(self._ui_events)
+
+    async def _screenshot_opaque_frames(self) -> None:
+        """Take screenshots of iframes where JS injection was blocked.
+
+        These screenshots are sent to Claude during test generation so it can
+        infer what form fields exist (e.g. Stripe card number, expiry, CVC)
+        and generate appropriate frameLocator().fill() code.
+        """
+        if not self._opaque_frames or not self.page:
+            return
+
+        import base64
+
+        for frame_id, frame_info in self._opaque_frames.items():
+            try:
+                # Find the iframe element in the main page
+                frame_name = frame_info["name"]
+                frame_url = frame_info["url"]
+
+                # Try to locate the iframe by name, then by src URL
+                iframe_locator = None
+                if frame_name:
+                    iframe_locator = self.page.locator(f'iframe[name="{frame_name}"]')
+                if not iframe_locator or await iframe_locator.count() == 0:
+                    # Try by src attribute (partial match on domain)
+                    from urllib.parse import urlparse
+                    domain = urlparse(frame_url).netloc
+                    if domain:
+                        iframe_locator = self.page.locator(f'iframe[src*="{domain}"]')
+
+                if iframe_locator and await iframe_locator.count() > 0:
+                    screenshot_bytes = await iframe_locator.first.screenshot()
+                    screenshot_b64 = base64.b64encode(screenshot_bytes).decode("utf-8")
+
+                    self._frame_screenshots.append({
+                        "frame_name": frame_name,
+                        "frame_url": frame_url,
+                        "screenshot_base64": screenshot_b64,
+                        "timestamp": time.time() * 1000,
+                        "reason": frame_info["reason"],
+                    })
+
+                    logger.info(
+                        f"Screenshot captured for opaque iframe: "
+                        f"{frame_name or frame_url[:60]}"
+                    )
+                else:
+                    logger.warning(
+                        f"Could not locate iframe element for screenshot: "
+                        f"{frame_name or frame_url[:60]}"
+                    )
+
+            except Exception as e:
+                logger.warning(f"Failed to screenshot opaque iframe {frame_id}: {e}")
 
     def _setup_network_capture(self) -> None:
         """Set up network request/response capture via Playwright events."""

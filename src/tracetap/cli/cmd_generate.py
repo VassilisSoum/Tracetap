@@ -108,6 +108,22 @@ async def _generate_async(
     event_count = len(correlation_result.correlated_events)
     console.print(f"\nLoaded [bold]{event_count}[/bold] correlated events from session.")
 
+    # Load opaque iframe screenshots if available
+    opaque_frames_file = session_dir / "opaque_frames.json"
+    opaque_frames = []
+    if opaque_frames_file.exists():
+        try:
+            with open(opaque_frames_file) as f:
+                opaque_data = json.load(f)
+                opaque_frames = opaque_data.get("frames", [])
+            if opaque_frames:
+                console.print(
+                    f"Found [bold]{len(opaque_frames)}[/bold] opaque iframe screenshot(s) "
+                    f"(will use AI vision to infer form fields)"
+                )
+        except (json.JSONDecodeError, KeyError):
+            pass
+
     # Detect base URL from metadata if not provided
     if not base_url and metadata_file.exists():
         try:
@@ -128,6 +144,7 @@ async def _generate_async(
         output_format=output_format,
         confidence_threshold=min_confidence,
         base_url=base_url,
+        opaque_frames=opaque_frames if opaque_frames else None,
     )
 
     # Generate with retry loop
