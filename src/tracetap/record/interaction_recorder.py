@@ -287,6 +287,7 @@ class InteractionRecorder:
                 "height": self.options.viewport_height,
             },
             "ignore_https_errors": True,
+            "bypass_csp": True,  # Allow JS injection into cross-origin iframes
         }
         if proxy:
             context_options["proxy"] = {"server": proxy}
