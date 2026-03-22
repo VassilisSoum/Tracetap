@@ -72,8 +72,6 @@ INTERACTION_CAPTURE_JS = """
 () => {
     if (window.__tracetap_initialized) return;
     window.__tracetap_initialized = true;
-    window.__tracetap_events = window.__tracetap_events || [];
-
     function getSelector(el) {
         if (!el || el === document.body || el === document.documentElement) return 'body';
 
@@ -122,7 +120,11 @@ INTERACTION_CAPTURE_JS = """
     }
 
     function pushEvent(evt) {
-        window.__tracetap_events.push(evt);
+        // Send event to Python immediately via exposed function
+        // This survives page navigation (events aren't lost)
+        if (window.__tracetap_push) {
+            window.__tracetap_push(JSON.stringify(evt));
+        }
     }
 
     // Capture clicks
@@ -233,6 +235,7 @@ class InteractionRecorder:
         self.browser = None
         self.context = None
         self.page = None
+        self._ui_events: List[Dict[str, Any]] = []
         self._network_calls: List[NetworkCall] = []
         self._pending_requests: Dict[str, Dict[str, Any]] = {}
         self._recording = False
@@ -287,6 +290,12 @@ class InteractionRecorder:
         if self.options.capture_network:
             self._setup_network_capture()
 
+        # Expose function to receive events from JS (survives navigation)
+        await self.context.expose_function(
+            "__tracetap_push",
+            self._on_ui_event,
+        )
+
         # Create page and inject event listeners
         self.page = await self.context.new_page()
 
@@ -317,8 +326,8 @@ class InteractionRecorder:
 
         logger.info("Stopping recording...")
 
-        # Collect UI events from the browser
-        ui_events = await self._collect_ui_events()
+        # Collect UI events (already in Python via expose_function)
+        ui_events = self._collect_ui_events()
 
         # Calculate duration
         end_time = time.time() * 1000
@@ -398,17 +407,22 @@ class InteractionRecorder:
                 await asyncio.sleep(0.5)  # Wait for page to settle
                 await self._inject_listeners()
 
-    async def _collect_ui_events(self) -> List[Dict[str, Any]]:
-        """Collect captured UI events from the browser's JavaScript context."""
-        if not self.page:
-            return []
+    def _on_ui_event(self, event_json: str) -> None:
+        """Receive a UI event from the browser JS context.
 
+        Called via expose_function - events are pushed to Python immediately,
+        surviving page navigation.
+        """
         try:
-            events = await self.page.evaluate("() => window.__tracetap_events || []")
-            return events
-        except Exception as e:
-            logger.warning(f"Failed to collect UI events: {e}")
-            return []
+            event = json.loads(event_json)
+            self._ui_events.append(event)
+            logger.debug(f"UI event: {event.get('type')} {event.get('selector', '')}")
+        except json.JSONDecodeError as e:
+            logger.warning(f"Failed to parse UI event: {e}")
+
+    def _collect_ui_events(self) -> List[Dict[str, Any]]:
+        """Return all captured UI events."""
+        return list(self._ui_events)
 
     def _setup_network_capture(self) -> None:
         """Set up network request/response capture via Playwright events."""
