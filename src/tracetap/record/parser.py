@@ -180,6 +180,8 @@ class TraceParser:
 
                     for line in trace_file:
                         line_num += 1
+                        if isinstance(line, bytes):
+                            line = line.decode('utf-8')
                         line = line.strip()
                         if not line:
                             continue

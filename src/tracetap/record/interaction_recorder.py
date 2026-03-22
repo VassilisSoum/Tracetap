@@ -417,16 +417,12 @@ class InteractionRecorder:
 
     async def _inject_into_frame(self, frame) -> None:
         """Inject event listeners into a single frame."""
+        is_main = (frame == self.page.main_frame)
+        frame_name = frame.name or ""
+        frame_url = frame.url or ""
         try:
-            url = frame.url
-            if not url or url == "about:blank":
+            if not frame_url or frame_url == "about:blank":
                 return
-
-            # Build frame identifier for selectors
-            # Main frame: no prefix. Iframes: prefix with frame locator.
-            is_main = (frame == self.page.main_frame)
-            frame_name = frame.name or ""
-            frame_url = frame.url or ""
 
             # Inject the capture JS + frame metadata
             await frame.evaluate(f"""() => {{
@@ -752,7 +748,7 @@ class InteractionRecorder:
             return
 
         req_data = self._pending_requests.pop(req_id)
-        parsed = urlparse(url)
+        url = req_data["url"]
 
         # Try to get response body for API calls
         response_body = None

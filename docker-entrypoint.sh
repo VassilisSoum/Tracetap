@@ -1,9 +1,15 @@
 #!/bin/bash
 set -e
 
+# Validate required environment variables
+: "${DISPLAY:?DISPLAY environment variable is required}"
+: "${SCREEN_WIDTH:?SCREEN_WIDTH environment variable is required}"
+: "${SCREEN_HEIGHT:?SCREEN_HEIGHT environment variable is required}"
+: "${SCREEN_DEPTH:?SCREEN_DEPTH environment variable is required}"
+
 # Start Xvfb (virtual framebuffer) - needed for headed browser
 if ! pgrep -x Xvfb > /dev/null 2>&1; then
-    Xvfb $DISPLAY -screen 0 ${SCREEN_WIDTH}x${SCREEN_HEIGHT}x${SCREEN_DEPTH} -ac > /dev/null 2>&1 &
+    Xvfb "$DISPLAY" -screen 0 "${SCREEN_WIDTH}x${SCREEN_HEIGHT}x${SCREEN_DEPTH}" -ac > /dev/null 2>&1 &
     sleep 1
 fi
 

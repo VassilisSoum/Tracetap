@@ -342,8 +342,13 @@ class TestGeneration:
             await generator.generate_tests(result, GenerationOptions())
 
         assert captured_prompt is not None
+        # captured_prompt is now a list of content blocks - check text blocks
+        prompt_text = " ".join(
+            block.get("text", "") for block in captured_prompt
+            if isinstance(block, dict) and block.get("type") == "text"
+        )
         # The prompt should not contain the raw password from the POST body
-        assert "secret123" not in captured_prompt
+        assert "secret123" not in prompt_text
 
 
 # ============================================================================

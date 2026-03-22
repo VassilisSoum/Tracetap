@@ -618,8 +618,6 @@ Examples:
   python -m tracetap.cert_installer install    # Install certificate
   python -m tracetap.cert_installer verify     # Verify installation
   python -m tracetap.cert_installer info       # Show certificate info
-  python -m tracetap.cert_installer uninstall  # Remove certificate
-
 For HTTPS traffic capture, the certificate must be installed and trusted.
         """
     )

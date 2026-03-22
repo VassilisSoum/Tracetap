@@ -165,12 +165,13 @@ async def _generate_async(
             if validation_errors:
                 console.print(f"[yellow]Syntax validation failed: {validation_errors}[/yellow]")
                 if attempt <= MAX_GENERATION_RETRIES:
-                    # Feed errors back to generator for retry
+                    # Feed errors back to generator for retry (preserve all options)
                     options = GenerationOptions(
                         template=template,
                         output_format=output_format,
                         confidence_threshold=min_confidence,
                         base_url=base_url,
+                        opaque_frames=opaque_frames if opaque_frames else None,
                         retry_context=f"Previous attempt had syntax errors: {validation_errors}. Fix these issues.",
                     )
                     continue
