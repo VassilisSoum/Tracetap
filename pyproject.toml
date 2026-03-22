@@ -4,36 +4,32 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tracetap"
-version = "1.0.0"
+version = "2.0.0"
 authors = [
     {name = "Vassilis Soumakis"}
 ]
-description = "The QA Automation Toolkit That Records Your Manual Tests and Generates Playwright Code"
+description = "Record manual browser tests, capture API traffic, generate Playwright test code with AI"
 readme = "README.md"
 license = {text = "MIT"}
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Testing",
-    "Topic :: Internet :: Proxy Servers",
     "Topic :: Software Development :: Quality Assurance",
 ]
-keywords = ["proxy", "http", "api", "testing", "postman", "playwright", "mitmproxy", "ai"]
+keywords = ["testing", "playwright", "qa", "automation", "browser", "recording", "ai"]
 
 dependencies = [
-    "mitmproxy>=8.0.0,<9.0.0",
-    "werkzeug>=2.0.0,<3.0.0",
-    "anthropic>=0.71.0",
+    "mitmproxy>=10.0.0",
+    "anthropic>=0.40.0",
     "PyYAML>=6.0",
-    "typing-extensions>=4.3,<=4.11.0",
     "rich>=13.0.0",
     "click>=8.0.0",
     "playwright>=1.40.0",
@@ -45,35 +41,22 @@ dev = [
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.1.0",
     "pytest-timeout>=2.1.0",
-    "black>=23.0.0",
-    "flake8>=6.0.0",
-    "mypy>=1.5.0",
-    "pylint>=2.17.0",
-    "types-PyYAML",
-    "types-requests",
-]
-all = [
-    "tracetap[dev]",
 ]
 
 [project.urls]
 Homepage = "https://github.com/VassilisSoum/tracetap"
 Repository = "https://github.com/VassilisSoum/tracetap"
-Documentation = "https://github.com/VassilisSoum/tracetap#readme"
 "Bug Tracker" = "https://github.com/VassilisSoum/tracetap/issues"
 
 [project.scripts]
-tracetap = "tracetap:main"
-tracetap-quickstart = "tracetap.cli.quickstart:main"
-tracetap-record = "tracetap.cli.record:main"
-tracetap-generate-tests = "tracetap.cli.generate_tests:main"
+tracetap = "tracetap.cli.main:cli"
 
 [tool.setuptools]
 packages = {find = {where = ["src"]}}
 package-dir = {"" = "src"}
 
 [tool.setuptools.package-data]
-tracetap = ["py.typed"]
+tracetap = ["generators/templates/*.txt"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
@@ -81,56 +64,8 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+asyncio_mode = "auto"
 addopts = [
     "--strict-markers",
     "--tb=short",
-    "--cov=src",
-    "--cov-report=term-missing",
-    "--cov-report=html",
-    "--cov-report=xml",
-]
-
-[tool.black]
-line-length = 100
-target-version = ['py38', 'py39', 'py310', 'py311', 'py312']
-include = '\.pyi?$'
-extend-exclude = '''
-/(
-  # directories
-  \.eggs
-  | \.git
-  | \.hg
-  | \.mypy_cache
-  | \.tox
-  | \.venv
-  | build
-  | dist
-)/
-'''
-
-[tool.mypy]
-python_version = "3.8"
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = false
-ignore_missing_imports = true
-
-[tool.coverage.run]
-source = ["src"]
-omit = [
-    "*/tests/*",
-    "*/__pycache__/*",
-    "*/site-packages/*",
-]
-
-[tool.coverage.report]
-exclude_lines = [
-    "pragma: no cover",
-    "def __repr__",
-    "raise AssertionError",
-    "raise NotImplementedError",
-    "if __name__ == .__main__.:",
-    "if TYPE_CHECKING:",
-    "class .*\\bProtocol\\):",
-    "@(abc\\.)?abstractmethod",
 ]
