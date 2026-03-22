@@ -498,58 +498,222 @@ class InteractionRecorder:
         return list(self._ui_events)
 
     async def _screenshot_opaque_frames(self) -> None:
-        """Take screenshots of iframes where JS injection was blocked.
+        """Extract DOM and screenshot from iframes where JS injection was blocked.
 
-        These screenshots are sent to Claude during test generation so it can
-        infer what form fields exist (e.g. Stripe card number, expiry, CVC)
-        and generate appropriate frameLocator().fill() code.
+        Uses CDP DOM.getDocument with pierce=true to read the iframe's DOM tree
+        even when CSP/sandbox blocks JS execution. This gives Claude exact element
+        attributes (id, name, class, aria-label, type, placeholder) for generating
+        precise selectors — no guessing from pixels.
+
+        Falls back to screenshot-only if CDP DOM extraction fails.
         """
         if not self._opaque_frames or not self.page:
             return
 
         import base64
 
+        # Create CDP session for DOM extraction
+        cdp_session = None
+        try:
+            cdp_session = await self.context.new_cdp_session(self.page)
+        except Exception as e:
+            logger.warning(f"Could not create CDP session: {e}")
+
         for frame_id, frame_info in self._opaque_frames.items():
+            frame_name = frame_info["name"]
+            frame_url = frame_info["url"]
+            frame_data = {
+                "frame_name": frame_name,
+                "frame_url": frame_url,
+                "timestamp": time.time() * 1000,
+                "reason": frame_info["reason"],
+            }
+
+            # Strategy 1: Extract DOM via CDP (gives exact selectors)
+            dom_html = await self._extract_frame_dom_via_cdp(
+                cdp_session, frame_name, frame_url
+            )
+            if dom_html:
+                frame_data["dom_html"] = dom_html
+                logger.info(
+                    f"DOM extracted via CDP for opaque iframe: "
+                    f"{frame_name or frame_url[:60]} ({len(dom_html)} chars)"
+                )
+
+            # Strategy 2: Screenshot as fallback/supplement
             try:
-                # Find the iframe element in the main page
-                frame_name = frame_info["name"]
-                frame_url = frame_info["url"]
-
-                # Try to locate the iframe by name, then by src URL
-                iframe_locator = None
-                if frame_name:
-                    iframe_locator = self.page.locator(f'iframe[name="{frame_name}"]')
-                if not iframe_locator or await iframe_locator.count() == 0:
-                    # Try by src attribute (partial match on domain)
-                    from urllib.parse import urlparse
-                    domain = urlparse(frame_url).netloc
-                    if domain:
-                        iframe_locator = self.page.locator(f'iframe[src*="{domain}"]')
-
+                iframe_locator = await self._find_iframe_locator(frame_name, frame_url)
                 if iframe_locator and await iframe_locator.count() > 0:
                     screenshot_bytes = await iframe_locator.first.screenshot()
-                    screenshot_b64 = base64.b64encode(screenshot_bytes).decode("utf-8")
-
-                    self._frame_screenshots.append({
-                        "frame_name": frame_name,
-                        "frame_url": frame_url,
-                        "screenshot_base64": screenshot_b64,
-                        "timestamp": time.time() * 1000,
-                        "reason": frame_info["reason"],
-                    })
-
-                    logger.info(
-                        f"Screenshot captured for opaque iframe: "
-                        f"{frame_name or frame_url[:60]}"
-                    )
-                else:
-                    logger.warning(
-                        f"Could not locate iframe element for screenshot: "
-                        f"{frame_name or frame_url[:60]}"
-                    )
-
+                    frame_data["screenshot_base64"] = base64.b64encode(
+                        screenshot_bytes
+                    ).decode("utf-8")
+                    if not dom_html:
+                        logger.info(
+                            f"Screenshot captured for opaque iframe (DOM extraction failed): "
+                            f"{frame_name or frame_url[:60]}"
+                        )
             except Exception as e:
-                logger.warning(f"Failed to screenshot opaque iframe {frame_id}: {e}")
+                logger.debug(f"Screenshot failed for iframe {frame_id}: {e}")
+
+            if "dom_html" in frame_data or "screenshot_base64" in frame_data:
+                self._frame_screenshots.append(frame_data)
+            else:
+                logger.warning(
+                    f"Could not extract DOM or screenshot for iframe: "
+                    f"{frame_name or frame_url[:60]}"
+                )
+
+    async def _extract_frame_dom_via_cdp(
+        self, cdp_session, frame_name: str, frame_url: str
+    ) -> Optional[str]:
+        """Extract DOM HTML from an iframe using Chrome DevTools Protocol.
+
+        CDP operates at the browser engine level, bypassing CSP/sandbox
+        restrictions that block JS injection. DOM.getDocument with pierce=true
+        traverses into iframes and shadow roots.
+
+        Returns simplified HTML of form-relevant elements (inputs, buttons,
+        labels, selects) with their attributes.
+        """
+        if not cdp_session:
+            return None
+
+        try:
+            # Get full DOM tree including iframes and shadow roots
+            result = await cdp_session.send("DOM.getDocument", {
+                "depth": -1,
+                "pierce": True,
+            })
+
+            root = result.get("root", {})
+
+            # Find the iframe's document node in the tree
+            iframe_doc = self._find_iframe_in_dom_tree(
+                root, frame_name, frame_url
+            )
+            if not iframe_doc:
+                logger.debug(f"Could not find iframe in DOM tree: {frame_name or frame_url}")
+                return None
+
+            # Extract form-relevant elements with their attributes
+            form_elements = self._extract_form_elements(iframe_doc)
+            if not form_elements:
+                logger.debug(f"No form elements found in iframe: {frame_name or frame_url}")
+                return None
+
+            return form_elements
+
+        except Exception as e:
+            logger.debug(f"CDP DOM extraction failed: {e}")
+            return None
+
+    def _find_iframe_in_dom_tree(
+        self, node: Dict, frame_name: str, frame_url: str
+    ) -> Optional[Dict]:
+        """Recursively find an iframe's content document in the CDP DOM tree."""
+        node_name = node.get("nodeName", "").lower()
+        attrs = self._parse_cdp_attributes(node.get("attributes", []))
+
+        # Check if this is our target iframe
+        if node_name == "iframe":
+            name_match = frame_name and attrs.get("name") == frame_name
+            src_match = frame_url and frame_url in attrs.get("src", "")
+            if name_match or src_match:
+                # The iframe's content document is in contentDocument
+                content_doc = node.get("contentDocument")
+                if content_doc:
+                    return content_doc
+
+        # Recurse into children
+        for child in node.get("children", []):
+            result = self._find_iframe_in_dom_tree(child, frame_name, frame_url)
+            if result:
+                return result
+
+        # Also check shadow roots
+        shadow_roots = node.get("shadowRoots", [])
+        for shadow in shadow_roots:
+            result = self._find_iframe_in_dom_tree(shadow, frame_name, frame_url)
+            if result:
+                return result
+
+        return None
+
+    def _extract_form_elements(self, node: Dict, depth: int = 0) -> str:
+        """Extract form-relevant HTML elements from a CDP DOM node tree.
+
+        Returns a simplified HTML representation with only form elements
+        and their attributes — enough for Claude to generate exact selectors.
+        """
+        FORM_TAGS = {
+            "input", "select", "textarea", "button", "label", "form",
+            "option", "fieldset", "legend", "a",
+        }
+        RELEVANT_ATTRS = {
+            "id", "name", "type", "class", "placeholder", "aria-label",
+            "aria-labelledby", "data-testid", "role", "value", "for",
+            "href", "action", "method", "autocomplete",
+        }
+
+        lines = []
+        node_name = node.get("nodeName", "").lower()
+        attrs = self._parse_cdp_attributes(node.get("attributes", []))
+
+        if node_name in FORM_TAGS:
+            # Build simplified HTML tag with relevant attributes
+            attr_parts = []
+            for attr_name in RELEVANT_ATTRS:
+                if attr_name in attrs:
+                    attr_parts.append(f'{attr_name}="{attrs[attr_name]}"')
+
+            indent = "  " * depth
+            attr_str = " " + " ".join(attr_parts) if attr_parts else ""
+            text = node.get("nodeValue", "").strip()[:50] if node.get("nodeValue") else ""
+
+            if text:
+                lines.append(f"{indent}<{node_name}{attr_str}>{text}</{node_name}>")
+            else:
+                lines.append(f"{indent}<{node_name}{attr_str}>")
+
+        # Always recurse to find nested form elements
+        for child in node.get("children", []):
+            child_html = self._extract_form_elements(child, depth + (1 if node_name in FORM_TAGS else 0))
+            if child_html:
+                lines.append(child_html)
+
+        # Check shadow roots too
+        for shadow in node.get("shadowRoots", []):
+            shadow_html = self._extract_form_elements(shadow, depth)
+            if shadow_html:
+                lines.append(f"{'  ' * depth}<!-- shadow-root -->")
+                lines.append(shadow_html)
+
+        return "\n".join(lines) if lines else ""
+
+    def _parse_cdp_attributes(self, attrs_list: List) -> Dict[str, str]:
+        """Parse CDP attributes list [name, value, name, value, ...] into dict."""
+        result = {}
+        for i in range(0, len(attrs_list) - 1, 2):
+            result[attrs_list[i]] = attrs_list[i + 1]
+        return result
+
+    async def _find_iframe_locator(self, frame_name: str, frame_url: str):
+        """Find the iframe element locator in the main page."""
+        if frame_name:
+            locator = self.page.locator(f'iframe[name="{frame_name}"]')
+            if await locator.count() > 0:
+                return locator
+
+        if frame_url:
+            from urllib.parse import urlparse
+            domain = urlparse(frame_url).netloc
+            if domain:
+                locator = self.page.locator(f'iframe[src*="{domain}"]')
+                if await locator.count() > 0:
+                    return locator
+
+        return None
 
     def _setup_network_capture(self) -> None:
         """Set up network request/response capture via Playwright events."""

@@ -641,27 +641,41 @@ class TestGenerator:
         # Build content blocks
         content = [{"type": "text", "text": prompt_text}]
 
-        # Add opaque iframe screenshots for vision analysis
+        # Add opaque iframe data (DOM or screenshots) for cross-origin iframes
         if options.opaque_frames:
-            iframe_context = (
-                "\n\nIMPORTANT: The following screenshots show iframes where TraceTap "
-                "could not inject event listeners (e.g. payment forms with strict CSP). "
-                "Analyze each screenshot to identify form fields and generate the "
-                "appropriate page.frameLocator() interactions. Use the frame name or URL "
-                "to create the correct frameLocator selector."
-            )
+            has_dom = any(f.get("dom_html") for f in options.opaque_frames)
+            has_screenshots = any(f.get("screenshot_base64") for f in options.opaque_frames)
+
+            if has_dom:
+                iframe_context = (
+                    "\n\nIMPORTANT: The following iframe DOM structures were extracted from "
+                    "cross-origin iframes (e.g. payment forms) where TraceTap could not "
+                    "inject event listeners. Generate page.frameLocator() code to interact "
+                    "with these elements. Use the exact attributes (id, name, placeholder, "
+                    "aria-label, data-testid) from the DOM to create precise selectors. "
+                    "Use the iframe name or src URL for the frameLocator selector."
+                )
+            else:
+                iframe_context = (
+                    "\n\nIMPORTANT: The following screenshots show iframes where TraceTap "
+                    "could not inject event listeners. Analyze each screenshot to identify "
+                    "form fields and generate page.frameLocator() interactions."
+                )
             content.append({"type": "text", "text": iframe_context})
 
             for frame_data in options.opaque_frames:
-                # Add frame context
-                frame_desc = (
-                    f"\nIframe: name=\"{frame_data.get('frame_name', '')}\" "
-                    f"url=\"{frame_data.get('frame_url', '')}\""
-                )
+                frame_name = frame_data.get('frame_name', '')
+                frame_url = frame_data.get('frame_url', '')
+                frame_desc = f"\nIframe: name=\"{frame_name}\" url=\"{frame_url}\""
                 content.append({"type": "text", "text": frame_desc})
 
-                # Add screenshot image
-                if frame_data.get("screenshot_base64"):
+                # Prefer DOM HTML (exact selectors) over screenshot (visual inference)
+                if frame_data.get("dom_html"):
+                    content.append({
+                        "type": "text",
+                        "text": f"\nIframe DOM (form elements):\n```html\n{frame_data['dom_html']}\n```"
+                    })
+                elif frame_data.get("screenshot_base64"):
                     content.append({
                         "type": "image",
                         "source": {
