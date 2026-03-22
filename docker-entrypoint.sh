@@ -15,7 +15,7 @@ if [ "$1" = "bash" ] || [ "$1" = "sh" ] || [ -z "$1" ]; then
     sleep 1
 
     # Start VNC server
-    x11vnc -display $DISPLAY -forever -nopw -quiet -xkb > /dev/null 2>&1 &
+    x11vnc -display $DISPLAY -forever -nopw -quiet -xkb -localhost > /dev/null 2>&1 &
     sleep 1
 
     # Start noVNC

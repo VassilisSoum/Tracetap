@@ -105,13 +105,13 @@ INTERACTION_CAPTURE_JS = """
             return `input[type="${el.type}"]`;
         }
 
-        // Fallback to tag + nth-child
+        // Fallback to tag + nth-of-type
         const parent = el.parentElement;
         if (parent) {
             const siblings = Array.from(parent.children).filter(c => c.tagName === el.tagName);
             if (siblings.length > 1) {
                 const index = siblings.indexOf(el) + 1;
-                return `${getSelector(parent)} > ${el.tagName.toLowerCase()}:nth-child(${index})`;
+                return `${getSelector(parent)} > ${el.tagName.toLowerCase()}:nth-of-type(${index})`;
             }
             return `${getSelector(parent)} > ${el.tagName.toLowerCase()}`;
         }
@@ -384,8 +384,9 @@ class InteractionRecorder:
                 await asyncio.sleep(0.1)
 
         except (ImportError, OSError):
-            # Fallback for systems without select
-            input("Press ENTER to stop recording... ")
+            # Fallback for systems without select (e.g. Windows)
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, input, "Press ENTER to stop recording... ")
 
     async def _inject_listeners(self) -> None:
         """Inject JavaScript event listeners into the current page."""
@@ -442,21 +443,25 @@ class InteractionRecorder:
         if url.startswith("data:") or url.startswith("chrome"):
             return
 
-        self._pending_requests[url] = {
+        # Use id(request) as key to handle parallel requests to same URL
+        req_id = id(request)
+        self._pending_requests[req_id] = {
             "method": request.method,
             "url": url,
             "timestamp": time.time() * 1000,
             "headers": dict(request.headers),
             "post_data": request.post_data,
+            "_request_obj": request,
         }
 
     async def _on_response(self, response) -> None:
         """Handle incoming network response."""
-        url = response.url
-        if url not in self._pending_requests:
+        # Find the matching request by object identity
+        req_id = id(response.request)
+        if req_id not in self._pending_requests:
             return
 
-        req_data = self._pending_requests.pop(url)
+        req_data = self._pending_requests.pop(req_id)
         parsed = urlparse(url)
 
         # Try to get response body for API calls

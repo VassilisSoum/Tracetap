@@ -274,7 +274,10 @@ def run_proxy(listen_port=8080, raw_log_file=None, host_filter=None):
         '-s', str(addon_path),
     ]
 
-    mitmain.mitmdump()
+    try:
+        mitmain.mitmdump()
+    except (KeyboardInterrupt, SystemExit):
+        pass  # Normal shutdown via Ctrl+C
 
 
 if __name__ == '__main__':

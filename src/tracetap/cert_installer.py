@@ -626,7 +626,7 @@ For HTTPS traffic capture, the certificate must be installed and trusted.
 
     parser.add_argument(
         'action',
-        choices=['install', 'verify', 'uninstall', 'info'],
+        choices=['install', 'verify', 'info'],
         help='Action to perform'
     )
 
@@ -655,10 +655,6 @@ For HTTPS traffic capture, the certificate must be installed and trusted.
 
         elif args.action == 'verify':
             success = installer.verify()
-            sys.exit(0 if success else 1)
-
-        elif args.action == 'uninstall':
-            success = installer.uninstall()
             sys.exit(0 if success else 1)
 
         elif args.action == 'info':

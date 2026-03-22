@@ -298,6 +298,8 @@ class CodeSynthesizer:
                     messages=[{"role": "user", "content": prompt}],
                 )
 
+                if not message.content:
+                    raise RuntimeError("Claude returned empty response")
                 generated_text = message.content[0].text
                 logger.info(f"Generated {len(generated_text)} characters of code (model: {model})")
 

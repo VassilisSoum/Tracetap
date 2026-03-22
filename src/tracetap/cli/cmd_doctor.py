@@ -163,10 +163,9 @@ def check_anthropic_key() -> Check:
 
 def check_proxy_port(port=8080) -> Check:
     try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(1)
-        result = sock.connect_ex(("localhost", port))
-        sock.close()
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(1)
+            result = sock.connect_ex(("localhost", port))
         if result == 0:
             return Check(f"Port {port}", "warn", "already in use",
                          f"Free the port or use --proxy-port to pick another")
@@ -188,7 +187,7 @@ def check_npm() -> Check:
 
 
 @click.command()
-@click.option("--no-api-check", is_flag=True, help="Skip API key validation (avoids API call)")
+@click.option("--no-api-check", is_flag=True, help="Skip API key validation (avoids a small billable API call)")
 def doctor(no_api_check):
     """Check prerequisites and system configuration.
 
