@@ -12,7 +12,6 @@ from .constants import (
     MAX_VARIATION_TOKENS,
     API_TIMEOUT_SECONDS,
     MAX_API_RETRIES,
-    get_model_config,
 )
 from .errors import (
     TraceTapError,
@@ -59,7 +58,6 @@ __all__ = [
     'MAX_VARIATION_TOKENS',
     'API_TIMEOUT_SECONDS',
     'MAX_API_RETRIES',
-    'get_model_config',
     # Error handling
     'TraceTapError',
     'APIKeyMissingError',
