@@ -1,0 +1,11 @@
+services:
+  tracetap:
+    build: .
+    ports:
+      - "6080:6080"   # noVNC web interface
+    volumes:
+      - ./recordings:/app/recordings
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    stdin_open: true
+    tty: true

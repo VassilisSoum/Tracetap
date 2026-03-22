@@ -1,0 +1,14 @@
+.git
+.venv
+__pycache__
+*.pyc
+*.egg-info
+dist
+build
+htmlcov
+.coverage
+.omc
+.claude
+recordings
+sessions
+node_modules
