@@ -40,7 +40,7 @@ except ImportError:
 
 from ..record.correlator import CorrelationResult, CorrelatedEvent
 from .pii_sanitizer import PIISanitizer, SanitizationConfig
-from ..common.constants import DEFAULT_CLAUDE_MODEL, MAX_GENERATION_TOKENS
+from ..common.constants import DEFAULT_CLAUDE_MODEL, MAX_GENERATION_TOKENS, MODEL_FALLBACKS
 
 logger = logging.getLogger(__name__)
 
@@ -283,21 +283,39 @@ class CodeSynthesizer:
         logger.info(f"   Output format: {config.output_format.value}")
         logger.info(f"   Template: {config.template.value}")
 
-        try:
-            message = self.client.messages.create(
-                model=DEFAULT_CLAUDE_MODEL,
-                max_tokens=MAX_GENERATION_TOKENS,
-                messages=[{"role": "user", "content": prompt}],
-            )
+        # Try default model, then fallbacks if 404
+        models_to_try = [DEFAULT_CLAUDE_MODEL] + [
+            m for m in MODEL_FALLBACKS if m != DEFAULT_CLAUDE_MODEL
+        ]
+        last_error = None
 
-            generated_text = message.content[0].text
-            logger.info(f"Generated {len(generated_text)} characters of code")
+        for model in models_to_try:
+            try:
+                logger.info(f"   Trying model: {model}")
+                message = self.client.messages.create(
+                    model=model,
+                    max_tokens=MAX_GENERATION_TOKENS,
+                    messages=[{"role": "user", "content": prompt}],
+                )
 
-            return self._extract_code_from_response(generated_text, config.output_format)
+                generated_text = message.content[0].text
+                logger.info(f"Generated {len(generated_text)} characters of code (model: {model})")
 
-        except Exception as e:
-            logger.error(f"Claude API call failed: {e}")
-            raise RuntimeError(f"Failed to generate test code: {e}")
+                return self._extract_code_from_response(generated_text, config.output_format)
+
+            except Exception as e:
+                last_error = e
+                error_str = str(e)
+                # Only try fallback for model-not-found errors
+                if "not_found" in error_str or "404" in error_str:
+                    logger.warning(f"   Model {model} not available, trying next...")
+                    continue
+                # For other errors (auth, rate limit, etc.), don't retry with different model
+                logger.error(f"Claude API call failed: {e}")
+                raise RuntimeError(f"Failed to generate test code: {e}")
+
+        logger.error(f"All models failed. Last error: {last_error}")
+        raise RuntimeError(f"Failed to generate test code: no working model found. Last error: {last_error}")
 
     def _extract_code_from_response(self, response: str, output_format: OutputFormat) -> str:
         """Extract code from Claude response (handles markdown code blocks).
