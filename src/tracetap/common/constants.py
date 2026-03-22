@@ -10,14 +10,14 @@ import os
 # Users can override via env var if the default doesn't work on their plan
 DEFAULT_CLAUDE_MODEL = os.environ.get(
     "TRACETAP_CLAUDE_MODEL",
-    "claude-sonnet-4-5-20250514"
+    "claude-sonnet-4-6"
 )
 
 # Fallback models to try if the default returns 404
 MODEL_FALLBACKS = [
-    "claude-sonnet-4-5-20250514",
-    "claude-3-5-sonnet-20241022",
-    "claude-3-haiku-20240307",
+    "claude-sonnet-4-6",
+    "claude-sonnet-4-5-20250929",
+    "claude-haiku-4-5-20251001",
 ]
 
 # Token limits per operation
