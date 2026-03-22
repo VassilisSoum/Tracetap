@@ -71,9 +71,10 @@ class GenerationOptions:
     include_comments: bool = True
     base_url: Optional[str] = None
     test_name: Optional[str] = None
-    sanitize_pii: bool = True  # NEW - default ON for security
-    sanitization_config: Optional[SanitizationConfig] = None  # NEW
-    performance_thresholds: Optional[List] = None  # NEW - performance assertions
+    sanitize_pii: bool = True
+    sanitization_config: Optional[SanitizationConfig] = None
+    performance_thresholds: Optional[List] = None
+    retry_context: Optional[str] = None  # Error feedback for retry attempts
 
 
 @dataclass
@@ -594,6 +595,10 @@ class TestGenerator:
             confidence_threshold=options.confidence_threshold,
             base_url=options.base_url or "REPLACE_WITH_YOUR_BASE_URL",
         )
+
+        # Inject retry context if this is a retry attempt
+        if options.retry_context:
+            prompt += f"\n\nIMPORTANT: {options.retry_context}\n"
 
         # Inject performance context if thresholds provided
         if options.performance_thresholds:

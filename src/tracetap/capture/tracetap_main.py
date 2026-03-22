@@ -243,5 +243,39 @@ def main():
         pass
 
 
+def run_proxy(listen_port=8080, raw_log_file=None, host_filter=None):
+    """Run the proxy programmatically (called from CLI).
+
+    Args:
+        listen_port: Port to listen on
+        raw_log_file: Path for raw JSON traffic log
+        host_filter: Only capture traffic to this host
+    """
+    if raw_log_file:
+        os.environ['TRACETAP_RAW_LOG_PATH'] = raw_log_file
+    if host_filter:
+        os.environ['TRACETAP_FILTER_HOSTS'] = host_filter
+    os.environ['TRACETAP_SESSION'] = 'proxy-session'
+    os.environ['TRACETAP_QUIET'] = 'false'
+    os.environ['TRACETAP_VERBOSE'] = 'false'
+    os.environ.setdefault('TRACETAP_FILTER_REGEX', '')
+    os.environ.setdefault('TRACETAP_FILTER_HOSTS', '')
+
+    addon_path = Path(__file__).parent / 'tracetap_addon.py'
+    if not addon_path.exists():
+        raise RuntimeError(f"Cannot find tracetap_addon.py in {addon_path.parent}")
+
+    sys.argv = [
+        'mitmdump',
+        '--listen-host', '0.0.0.0',
+        '--listen-port', str(listen_port),
+        '--set', 'ssl_insecure=true',
+        '--set', 'upstream_cert=false',
+        '-s', str(addon_path),
+    ]
+
+    mitmain.mitmdump()
+
+
 if __name__ == '__main__':
     main()
