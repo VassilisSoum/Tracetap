@@ -123,9 +123,9 @@ class CorrelationOptions:
         include_orphans: Include UI events with no network calls (default False)
     """
 
-    window_ms: int = 500
-    min_confidence: float = 0.5
-    include_orphans: bool = False
+    window_ms: int = 3000  # 3 seconds — SPAs need wider window for lazy-loaded API calls
+    min_confidence: float = 0.3  # Lower default to catch SPA correlations
+    include_orphans: bool = True  # Include UI events without network calls (common in SPAs)
 
 
 class EventCorrelator:
@@ -254,6 +254,10 @@ class EventCorrelator:
             if i in used_calls:
                 continue  # Skip already correlated calls
 
+            # Skip static assets — they're not triggered by user actions
+            if self._is_static_asset(network_call):
+                continue
+
             time_delta = network_call.timestamp - ui_timestamp
 
             # Network call must happen AFTER UI event (within window)
@@ -265,6 +269,31 @@ class EventCorrelator:
                 break
 
         return related_calls
+
+    @staticmethod
+    def _is_static_asset(network_call: NetworkRequest) -> bool:
+        """Check if a network call is a static asset (not user-triggered)."""
+        path = network_call.path.lower()
+        url = network_call.url.lower()
+
+        # Static file extensions
+        static_extensions = (
+            '.js', '.css', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico',
+            '.woff', '.woff2', '.ttf', '.eot', '.map', '.webp', '.avif',
+        )
+        if any(path.endswith(ext) or f'{ext}?' in path for ext in static_extensions):
+            return True
+
+        # CDN patterns
+        cdn_patterns = (
+            '/static/', '/assets/', '/dist/', '/bundle/', '/chunks/',
+            '/fonts/', '/images/', '/img/', '/icons/',
+            'cdn.', 'static.', 'assets.',
+        )
+        if any(p in url for p in cdn_patterns):
+            return True
+
+        return False
 
     def _calculate_correlation(
         self,

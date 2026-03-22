@@ -65,6 +65,37 @@ class RecorderOptions:
     ignore_resource_types: List[str] = field(
         default_factory=lambda: ['image', 'font', 'stylesheet', 'media']
     )
+    # Domains to ignore for network capture (tracking, analytics, ads)
+    ignore_network_domains: List[str] = field(
+        default_factory=lambda: [
+            'google-analytics.com', 'googletagmanager.com', 'googleapis.com/tag',
+            'facebook.com', 'facebook.net', 'fbcdn.net', 'fb.com',
+            'doubleclick.net', 'googlesyndication.com', 'googleadservices.com',
+            'hotjar.com', 'mixpanel.com', 'segment.com', 'segment.io',
+            'amplitude.com', 'fullstory.com', 'logrocket.com',
+            'sentry.io', 'bugsnag.com', 'datadog-agent',
+            'newrelic.com', 'nr-data.net',
+            'intercom.io', 'intercomcdn.com',
+            'hubspot.com', 'hs-analytics.net', 'hs-banner.com',
+            'optimizely.com', 'launchdarkly.com',
+            'cookiebot.com', 'onetrust.com', 'cookielaw.org',
+        ]
+    )
+
+
+# Domains that indicate tracking/analytics iframes (not worth screenshotting)
+TRACKING_IFRAME_DOMAINS = {
+    'facebook.com', 'facebook.net', 'fb.com', 'fbcdn.net',
+    'google.com/recaptcha', 'googletagmanager.com', 'google-analytics.com',
+    'doubleclick.net', 'googlesyndication.com',
+    'twitter.com', 'platform.twitter.com',
+    'ads.linkedin.com', 'snap.licdn.com',
+    'bat.bing.com',
+    'hotjar.com', 'clarity.ms',
+    'intercom.io',
+    'cookiebot.com', 'onetrust.com', 'cookielaw.org',
+    'tiktok.com', 'analytics.tiktok.com',
+}
 
 
 # JavaScript injected into every page to capture user interactions
@@ -439,8 +470,13 @@ class InteractionRecorder:
 
         except Exception as e:
             # JS injection blocked (likely sandbox/CSP on cross-origin iframe)
-            # Track as opaque frame — we'll screenshot it instead
             if not is_main:
+                # Skip tracking/analytics iframes — they're noise
+                if self._is_tracking_iframe(frame_name, frame_url):
+                    logger.debug(f"Skipping tracking iframe: {frame_name or frame_url[:60]}")
+                    return
+
+                # Track as opaque frame — we'll extract DOM/screenshot for AI
                 frame_id = frame_name or frame_url
                 if frame_id and frame_id not in self._opaque_frames:
                     self._opaque_frames[frame_id] = {
@@ -450,7 +486,7 @@ class InteractionRecorder:
                     }
                     logger.info(
                         f"Opaque iframe detected (JS blocked): {frame_name or frame_url[:60]}. "
-                        f"Will use screenshot for AI analysis."
+                        f"Will use DOM extraction for AI analysis."
                     )
             else:
                 logger.debug(f"Failed to inject into frame: {e}")
@@ -475,6 +511,22 @@ class InteractionRecorder:
         else:
             # Iframe navigated - inject into just that frame
             await self._inject_into_frame(frame)
+
+    def _is_tracking_iframe(self, frame_name: str, frame_url: str) -> bool:
+        """Check if an iframe is a tracking/analytics pixel (not worth capturing)."""
+        check_str = (frame_url + " " + frame_name).lower()
+        for domain in TRACKING_IFRAME_DOMAINS:
+            if domain in check_str:
+                return True
+        # Detect common tracking iframe patterns:
+        # - 1x1 pixel iframes (name often starts with 'fb', 'goog', etc.)
+        # - Frame names that are just random IDs (no meaningful content)
+        if frame_name and not frame_url:
+            # Frame with name but no URL = likely tracking pixel
+            return True
+        if frame_url and frame_url in ("about:blank", "about:srcdoc"):
+            return True
+        return False
 
     def _on_ui_event(self, event_json: str) -> None:
         """Receive a UI event from the browser JS context.
@@ -728,6 +780,12 @@ class InteractionRecorder:
         # Skip data URLs and browser internals
         if url.startswith("data:") or url.startswith("chrome"):
             return
+
+        # Skip tracking/analytics domains
+        url_lower = url.lower()
+        for domain in self.options.ignore_network_domains:
+            if domain in url_lower:
+                return
 
         # Use id(request) as key to handle parallel requests to same URL
         req_id = id(request)
