@@ -120,6 +120,13 @@ INTERACTION_CAPTURE_JS = """
     }
 
     function pushEvent(evt) {
+        // Attach frame context if this is an iframe
+        if (window.__tracetap_frame && !window.__tracetap_frame.isMain) {
+            evt.frame = {
+                name: window.__tracetap_frame.name,
+                url: window.__tracetap_frame.url,
+            };
+        }
         // Send event to Python immediately via exposed function
         // This survives page navigation (events aren't lost)
         if (window.__tracetap_push) {
@@ -299,10 +306,14 @@ class InteractionRecorder:
         # Create page and inject event listeners
         self.page = await self.context.new_page()
 
-        # Re-inject on every navigation (SPA route changes, new pages)
+        # Re-inject on every navigation (SPA route changes, new pages, iframes)
         self.page.on("load", lambda: asyncio.ensure_future(self._inject_listeners()))
         self.page.on("framenavigated", lambda frame: asyncio.ensure_future(
             self._on_navigation(frame)
+        ))
+        # Inject into dynamically added iframes
+        self.page.on("frameattached", lambda frame: asyncio.ensure_future(
+            self._on_frame_attached(frame)
         ))
 
         # Navigate to URL
@@ -389,24 +400,62 @@ class InteractionRecorder:
             await loop.run_in_executor(None, input, "Press ENTER to stop recording... ")
 
     async def _inject_listeners(self) -> None:
-        """Inject JavaScript event listeners into the current page."""
+        """Inject JavaScript event listeners into all frames (main + iframes)."""
         if not self.page:
             return
 
+        for frame in self.page.frames:
+            await self._inject_into_frame(frame)
+
+    async def _inject_into_frame(self, frame) -> None:
+        """Inject event listeners into a single frame."""
         try:
-            await self.page.evaluate(INTERACTION_CAPTURE_JS)
-            logger.debug("Event listeners injected")
+            url = frame.url
+            if not url or url == "about:blank":
+                return
+
+            # Build frame identifier for selectors
+            # Main frame: no prefix. Iframes: prefix with frame locator.
+            is_main = (frame == self.page.main_frame)
+            frame_name = frame.name or ""
+            frame_url = frame.url or ""
+
+            # Inject the capture JS + frame metadata
+            await frame.evaluate(f"""() => {{
+                // Set frame metadata so events include iframe context
+                window.__tracetap_frame = {{
+                    isMain: {str(is_main).lower()},
+                    name: "{frame_name}",
+                    url: "{frame_url}"
+                }};
+            }}""")
+            await frame.evaluate(INTERACTION_CAPTURE_JS)
+            if not is_main:
+                logger.debug(f"Listeners injected into iframe: {frame_name or frame_url[:60]}")
+
         except Exception as e:
-            logger.debug(f"Failed to inject listeners (page may have navigated): {e}")
+            logger.debug(f"Failed to inject into frame: {e}")
+
+    async def _on_frame_attached(self, frame) -> None:
+        """Handle dynamically added iframe - wait for load then inject."""
+        await asyncio.sleep(1)  # Wait for iframe content to load
+        await self._inject_into_frame(frame)
 
     async def _on_navigation(self, frame) -> None:
-        """Handle page navigation - re-inject listeners."""
+        """Handle frame navigation - re-inject listeners into all frames."""
+        url = frame.url
+        if not url or url == "about:blank":
+            return
+
+        logger.debug(f"Navigation detected: {url[:80]}")
+        await asyncio.sleep(0.5)  # Wait for page/frame to settle
+
         if frame == self.page.main_frame:
-            url = frame.url
-            if url and url != "about:blank":
-                logger.debug(f"Navigation detected: {url}")
-                await asyncio.sleep(0.5)  # Wait for page to settle
-                await self._inject_listeners()
+            # Main frame navigated - re-inject into all frames
+            await self._inject_listeners()
+        else:
+            # Iframe navigated - inject into just that frame
+            await self._inject_into_frame(frame)
 
     def _on_ui_event(self, event_json: str) -> None:
         """Receive a UI event from the browser JS context.
