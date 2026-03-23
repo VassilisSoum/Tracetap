@@ -8,7 +8,15 @@ RULES:
 5. Assert HTTP status codes from the recorded responses.
 6. Use async/await consistently.
 
+CRITICAL - IFRAME HANDLING:
+When an event has a "frame" field, the interaction happened INSIDE an iframe.
+You MUST use page.frameLocator() to target elements inside iframes:
+- If frame.url is set: use page.frameLocator('iframe[src*="<domain-from-url>"]')
+- If frame.name is set: use page.frameLocator('iframe[name="<name>"]')
+- Chain .locator() after frameLocator for the element.
+- Events WITHOUT a "frame" field are on the main page — use page.click/fill directly.
+
 RECORDED EVENTS (JSON):
 {events_json}
 
-Generate a single test that replays the recorded user flow. Use the exact selectors, URLs, and values from the events above. For fill events, use page.fill() with the recorded selector and value. For click events, use page.click() with the recorded selector. For navigate events, use page.goto() with a relative path.
+Generate a single test that replays the recorded user flow. Use the exact selectors, URLs, and values from the events above. For iframe events, use frameLocator. For main page events, use page directly.

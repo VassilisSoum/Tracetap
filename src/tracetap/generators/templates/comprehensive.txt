@@ -12,13 +12,36 @@ RULES:
 9. Use async/await consistently.
 10. Add page.waitForLoadState() after navigations.
 
+CRITICAL - IFRAME HANDLING:
+When an event has a "frame" field, the interaction happened INSIDE an iframe, not the main page.
+You MUST use page.frameLocator() to target elements inside iframes.
+
+How to determine the frameLocator selector:
+- If frame.name is set: use page.frameLocator('iframe[name="<name>"]')
+- If frame.url is set but name is empty: use page.frameLocator('iframe[src*="<domain>"]') where domain is extracted from the URL
+- Chain .locator() after frameLocator to target the element inside the iframe
+
+Example - event with frame context:
+  {{"type": "fill", "selector": "#cvv", "value": "123", "frame": {{"name": "", "url": "https://hosted.test.paysafe.com/js/v1/latest/index.html"}}}}
+
+Generated code:
+  const paymentFrame = page.frameLocator('iframe[src*="hosted.test.paysafe.com"]');
+  await paymentFrame.locator('#cvv').fill('123');
+
+Example - event WITHOUT frame context (main page):
+  {{"type": "click", "selector": "button:has-text(\"Log In\")"}}
+
+Generated code:
+  await page.click('button:has-text("Log In")');
+
 RECORDED EVENTS (JSON):
 {events_json}
 
 Generate a test suite that:
 - Replays the recorded user flow as the happy path test, using EXACT selectors, URLs, and values from the events.
-- For fill events, use page.fill() with the recorded selector and value.
-- For click events, use page.click() with the recorded selector.
+- For events WITHOUT a "frame" field: use page.click(), page.fill() directly.
+- For events WITH a "frame" field: use page.frameLocator() to target the iframe, then .locator() for the element.
+- Group iframe interactions with the same frame URL into a shared frameLocator variable for readability.
 - For navigate events, use page.goto() with a relative path.
 - Adds 1-2 negative test cases (e.g. empty form submission, invalid input) based on the form fields observed.
 - Asserts network response status codes and key response body fields.
