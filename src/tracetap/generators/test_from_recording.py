@@ -562,6 +562,9 @@ class TestGenerator:
         # Call Claude API
         generated_code = await self._call_claude_api(prompt, options.output_format)
 
+        # Fix iframe selectors that Claude missed
+        generated_code = self._fix_iframe_selectors(generated_code, filtered_events)
+
         # Post-process
         formatted_code = self._format_generated_code(generated_code, options)
 
@@ -584,6 +587,80 @@ class TestGenerator:
             Filtered list of events
         """
         return [event for event in events if event.correlation.confidence >= threshold]
+
+    def _fix_iframe_selectors(self, code: str, events: List[CorrelatedEvent]) -> str:
+        """Post-process generated code to fix iframe selectors Claude missed.
+
+        Scans the code for page.click/fill/locator calls using selectors that
+        were recorded inside iframes, and wraps them in frameLocator() calls.
+
+        This is deterministic — we know exactly which selectors came from iframes
+        and what the iframe URL was. No AI guessing needed.
+        """
+        import re
+        from urllib.parse import urlparse
+
+        # Build map: selector -> iframe domain from event metadata
+        iframe_selectors: Dict[str, str] = {}
+        for event in events:
+            metadata = getattr(event.ui_event, "metadata", None) or {}
+            frame = metadata.get("frame")
+            selector = getattr(event.ui_event, "selector", None)
+
+            if frame and selector:
+                frame_url = frame.get("url", "")
+                if frame_url:
+                    domain = urlparse(frame_url).netloc
+                    if domain:
+                        iframe_selectors[selector] = domain
+
+        if not iframe_selectors:
+            return code
+
+        logger.info(f"Post-processing: fixing {len(iframe_selectors)} iframe selector(s)")
+
+        fixed_code = code
+        for selector, domain in iframe_selectors.items():
+            # Escape selector for regex
+            escaped_sel = re.escape(selector)
+
+            # Match patterns like:
+            #   page.click('#cvv')
+            #   page.fill('#cvv', '123')
+            #   page.locator('#cvv')
+            #   await page.click('#cvv')
+            #   await page.fill("#cvv", "123")
+            # But NOT:
+            #   paysafeFrame.locator('#cvv')  (already fixed)
+            #   page.frameLocator(...).locator('#cvv')  (already fixed)
+
+            for method in ['click', 'fill', 'locator', 'type', 'press']:
+                # Match page.method('selector'...) but not someFrame.locator('selector')
+                # Negative lookbehind for frameLocator or any variable.locator
+                patterns = [
+                    # page.click('selector') or page.click("selector")
+                    (rf"(page\.{method}\s*\(\s*)['\"]({escaped_sel})['\"]",
+                     rf"page.frameLocator('iframe[src*=\"{domain}\"]').locator('{selector}').{method}("),
+                ]
+
+                for pattern, replacement in patterns:
+                    # Only replace if not already inside a frameLocator chain
+                    new_code = re.sub(pattern, replacement, fixed_code)
+                    if new_code != fixed_code:
+                        # Clean up double method calls from replacement
+                        # e.g. .locator('#cvv').click(.click( -> .locator('#cvv').click(
+                        new_code = re.sub(
+                            rf"\.{method}\(\.{method}\(",
+                            f".{method}(",
+                            new_code
+                        )
+                        fixed_code = new_code
+
+        if fixed_code != code:
+            fixes = sum(1 for s in iframe_selectors if s in code and f"frameLocator" not in code.split(s)[0][-50:])
+            logger.info(f"Post-processing: applied iframe frameLocator fixes")
+
+        return fixed_code
 
     def _load_template(self, template_name: str) -> str:
         """Load template file.
@@ -696,15 +773,23 @@ class TestGenerator:
         Returns:
             Dictionary representation (sanitized if PII sanitization is enabled)
         """
+        # Extract frame info from metadata (preserved during TraceTapEvent conversion)
+        metadata = getattr(event.ui_event, "metadata", None) or {}
+        frame_info = metadata.get("frame")
+
+        ui_event_dict = {
+            "type": getattr(event.ui_event, "type", "unknown"),
+            "timestamp": event.ui_event.timestamp,
+            "selector": getattr(event.ui_event, "selector", None),
+            "value": getattr(event.ui_event, "value", None),
+            "url": getattr(event.ui_event, "url", None),
+        }
+        if frame_info:
+            ui_event_dict["frame"] = frame_info
+
         raw_event = {
             "sequence": event.sequence,
-            "ui_event": {
-                "type": getattr(event.ui_event, "type", "unknown"),
-                "timestamp": event.ui_event.timestamp,
-                "selector": getattr(event.ui_event, "selector", None),
-                "value": getattr(event.ui_event, "value", None),
-                "url": getattr(event.ui_event, "url", None),
-            },
+            "ui_event": ui_event_dict,
             "network_calls": [
                 {
                     "method": call.method,

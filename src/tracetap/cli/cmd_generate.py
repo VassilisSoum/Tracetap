@@ -239,6 +239,11 @@ def _load_correlation(correlation_file: Path):
         except ValueError:
             event_type = EventType.CLICK
 
+        # Preserve frame info in metadata for iframe selector fixing
+        event_metadata = ui_data.get("metadata") or {}
+        if ui_data.get("frame"):
+            event_metadata["frame"] = ui_data["frame"]
+
         ui_event = TraceTapEvent(
             type=event_type,
             timestamp=ui_data.get("timestamp", 0),
@@ -246,6 +251,7 @@ def _load_correlation(correlation_file: Path):
             selector=ui_data.get("selector"),
             value=ui_data.get("value"),
             url=ui_data.get("url"),
+            metadata=event_metadata,
         )
 
         network_calls = []

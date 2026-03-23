@@ -248,6 +248,11 @@ class RecordingSession:
             except ValueError:
                 event_type = EventType.CLICK
 
+            # Merge frame info into metadata so it survives the TraceTapEvent conversion
+            event_metadata = evt.get("metadata") or {}
+            if evt.get("frame"):
+                event_metadata["frame"] = evt["frame"]
+
             tracetap_events.append(TraceTapEvent(
                 type=event_type,
                 timestamp=evt.get("timestamp", 0),
@@ -255,7 +260,7 @@ class RecordingSession:
                 selector=evt.get("selector"),
                 value=evt.get("value"),
                 url=evt.get("url"),
-                metadata=evt.get("metadata"),
+                metadata=event_metadata,
             ))
 
         # Convert network calls to NetworkRequest objects
