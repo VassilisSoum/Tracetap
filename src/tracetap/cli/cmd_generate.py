@@ -310,6 +310,10 @@ def _correlate_from_raw(events_file: Path, traffic_file: Path):
         except ValueError:
             event_type = EventType.CLICK
 
+        event_metadata = evt.get("metadata") or {}
+        if evt.get("frame"):
+            event_metadata["frame"] = evt["frame"]
+
         ui_events.append(TraceTapEvent(
             type=event_type,
             timestamp=evt.get("timestamp", 0),
@@ -317,6 +321,7 @@ def _correlate_from_raw(events_file: Path, traffic_file: Path):
             selector=evt.get("selector"),
             value=evt.get("value"),
             url=evt.get("url"),
+            metadata=event_metadata,
         ))
 
     network_requests = []
