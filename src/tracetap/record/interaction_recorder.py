@@ -518,14 +518,27 @@ class InteractionRecorder:
         for domain in TRACKING_IFRAME_DOMAINS:
             if domain in check_str:
                 return True
-        # Detect common tracking iframe patterns:
-        # - 1x1 pixel iframes (name often starts with 'fb', 'goog', etc.)
-        # - Frame names that are just random IDs (no meaningful content)
-        if frame_name and not frame_url:
-            # Frame with name but no URL = likely tracking pixel
-            return True
-        if frame_url and frame_url in ("about:blank", "about:srcdoc"):
-            return True
+
+        # Detect common tracking iframe patterns by name:
+        # Facebook uses names like 'fb037337225792735773' (fb + random digits)
+        # Google uses names like 'goog_' prefix
+        import re
+        if frame_name:
+            # fb + digits = Facebook tracking pixel
+            if re.match(r'^fb\d{10,}$', frame_name):
+                return True
+            # goog_ prefix = Google tracking
+            if frame_name.startswith('goog_'):
+                return True
+            # Pure numeric or hex string = likely tracking/analytics ID
+            if re.match(r'^[0-9a-f]{16,}$', frame_name):
+                return True
+
+        # about:blank / about:srcdoc = tracking pixel or empty frame
+        if frame_url in ("about:blank", "about:srcdoc", ""):
+            # Only skip if the name also looks like a tracking ID (not meaningful)
+            if not frame_name or re.match(r'^[a-z]{0,4}\d{8,}$', frame_name):
+                return True
         return False
 
     def _on_ui_event(self, event_json: str) -> None:
